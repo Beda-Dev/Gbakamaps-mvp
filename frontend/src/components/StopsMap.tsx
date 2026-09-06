@@ -4,12 +4,20 @@
 // (VITE_MAPTILER_KEY, voir .env.example et README). Ni Google Maps ni sa
 // clé jamais configurée comme dans l'ancien projet.
 //
-// Si la clé n'est pas encore renseignée, repli automatique sur des tuiles
-// OpenStreetMap brutes (moins nettes, mais garde l'app utilisable pendant
-// la configuration) — jamais un écran cassé faute de clé.
+// Chaîne de repli à 3 niveaux (phase 2, §12 PROJECT_MEMORY.md — cohérente
+// avec le repli multi-fournisseurs ajouté côté routing) :
+//   1. VITE_MAPTILER_KEY
+//   2. VITE_MAPTILER_KEY_2 (clé de secours, optionnelle)
+//   3. Tuiles OpenStreetMap brutes (moins nettes, mais garde l'app
+//      utilisable — jamais un écran cassé, ni faute de clé ni si les DEUX
+//      clés sont invalides/en quota dépassé).
+// La bascule 1→2→3 est déclenchée par un vrai échec de chargement du style
+// (événement 'error' de MapLibre avec un code HTTP côté MapTiler — clé
+// invalide, quota dépassé, panne), pas une supposition.
 // =============================================================================
 import { useEffect, useRef, useState } from 'react';
 import {
+  AJAXError,
   LngLatBounds,
   Map,
   Marker,
@@ -23,7 +31,10 @@ import type { Stop } from '@/lib/api/types';
 import type { RouteGeometry } from '@/hooks/useRoute';
 import { LoaderIcon, LocateFixedIcon } from '@/components/icons';
 
-const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
+const MAPTILER_KEYS = [
+  import.meta.env.VITE_MAPTILER_KEY,
+  import.meta.env.VITE_MAPTILER_KEY_2,
+].filter((key): key is string => !!key);
 
 // Styles MapTiler réels (vérifiés) — l'utilisateur peut basculer entre eux.
 // Slugs confirmés : https://api.maptiler.com/maps/<slug>/style.json
@@ -51,11 +62,29 @@ const OSM_FALLBACK_STYLE: StyleSpecification = {
   layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
 };
 
-function resolveMapStyle(styleId: MapStyleId): string | StyleSpecification {
-  if (!MAPTILER_KEY) {
+// `keyIndex` : index dans MAPTILER_KEYS, ou -1 = repli OSM déjà atteint
+// (dernier recours, plus de clé à tenter).
+function resolveMapStyle(styleId: MapStyleId, keyIndex: number): string | StyleSpecification {
+  const key = keyIndex >= 0 ? MAPTILER_KEYS[keyIndex] : undefined;
+  if (!key) {
     return OSM_FALLBACK_STYLE;
   }
-  return `https://api.maptiler.com/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
+  return `https://api.maptiler.com/maps/${styleId}/style.json?key=${key}`;
+}
+
+// Un événement 'error' MapLibre correspond-il à un échec RÉEL de chargement
+// depuis MapTiler (clé invalide/quota dépassé/panne), par opposition à une
+// erreur sans rapport (image manquante, etc.) ? On ne bascule de clé que sur
+// un signal concret, jamais sur une simple supposition.
+function isMapTilerLoadFailure(error: unknown): boolean {
+  if (error instanceof AJAXError) {
+    return error.url.includes('api.maptiler.com');
+  }
+  // Échec réseau générique (pas de code HTTP) sur une requête vers MapTiler :
+  // AJAXError n'est pas toujours l'instance levée selon le type de panne.
+  return (
+    error instanceof Error && /maptiler/i.test(error.message)
+  );
 }
 
 export const STOP_TYPE_COLORS: Record<string, string> = {
@@ -151,18 +180,66 @@ export function StopsMap({
   const routeGeometryRef = useRef<RouteGeometry | null>(null);
   const [styleId, setStyleId] = useState<MapStyleId>(DEFAULT_STYLE);
   const [mapReady, setMapReady] = useState(false);
+  // Index de la clé MapTiler actuellement utilisée (-1 = repli OSM final).
+  // En ref (pas en state) : lu depuis le handler 'error' stable de MapLibre,
+  // pas besoin de re-render à chaque bascule.
+  const keyIndexRef = useRef<number>(MAPTILER_KEYS.length > 0 ? 0 : -1);
+  const styleIdRef = useRef<MapStyleId>(DEFAULT_STYLE);
+  const escalatingRef = useRef(false);
+  // Reflète keyIndexRef pour l'UI (le sélecteur de style n'a de sens que sur
+  // un vrai style vectoriel MapTiler, pas sur le repli OSM raster) — une ref
+  // seule ne déclencherait pas de re-render au moment de la bascule.
+  const [onFinalFallback, setOnFinalFallback] = useState(MAPTILER_KEYS.length === 0);
+
+  useEffect(() => {
+    styleIdRef.current = styleId;
+  }, [styleId]);
+
+  // Applique un style avec la clé/le niveau de repli actuel, puis redessine
+  // le tracé d'itinéraire (purgé par tout setStyle()).
+  function applyStyle(map: Map, id: MapStyleId) {
+    map.setStyle(resolveMapStyle(id, keyIndexRef.current));
+    map.once('style.load', () => {
+      const geometry = routeGeometryRef.current;
+      if (geometry) upsertRouteLayer(map, geometry);
+    });
+  }
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
     const map = new Map({
       container: containerRef.current,
-      style: resolveMapStyle(DEFAULT_STYLE),
+      style: resolveMapStyle(DEFAULT_STYLE, keyIndexRef.current),
       center: [center.lon, center.lat],
       zoom: 15,
     });
     map.addControl(new NavigationControl(), 'top-right');
     map.once('load', () => setMapReady(true));
+
+    // Bascule automatique clé 1 → clé 2 → OSM sur un échec RÉEL de
+    // chargement MapTiler (clé invalide, quota dépassé, panne) — jamais sur
+    // une simple supposition (voir isMapTilerLoadFailure). `escalatingRef`
+    // évite une cascade si plusieurs requêtes de la même tuile échouent en
+    // rafale pour la même cause.
+    map.on('error', (e) => {
+      if (escalatingRef.current) return;
+      if (keyIndexRef.current === -1) return; // déjà au repli OSM final
+      if (!isMapTilerLoadFailure(e.error)) return;
+
+      escalatingRef.current = true;
+      const previousTier = keyIndexRef.current + 1;
+      const hasNextKey = keyIndexRef.current + 1 < MAPTILER_KEYS.length;
+      keyIndexRef.current = hasNextKey ? keyIndexRef.current + 1 : -1;
+      console.warn(
+        `[GbakaMap] Échec de chargement MapTiler (clé ${previousTier}/${MAPTILER_KEYS.length}) — ` +
+          `bascule vers ${hasNextKey ? `la clé ${keyIndexRef.current + 1}` : 'le repli OpenStreetMap'}.`
+      );
+      if (!hasNextKey) setOnFinalFallback(true);
+      applyStyle(map, styleIdRef.current);
+      escalatingRef.current = false;
+    });
+
     mapRef.current = map;
 
     return () => {
@@ -188,12 +265,7 @@ export function StopsMap({
   function handleStyleChange(id: MapStyleId) {
     if (!mapRef.current || id === styleId) return;
     setStyleId(id);
-    const map = mapRef.current;
-    map.setStyle(resolveMapStyle(id));
-    map.once('style.load', () => {
-      const geometry = routeGeometryRef.current;
-      if (geometry) upsertRouteLayer(map, geometry);
-    });
+    applyStyle(mapRef.current, id);
   }
 
   useEffect(() => {
@@ -266,7 +338,7 @@ export function StopsMap({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {MAPTILER_KEY && (
+      {!onFinalFallback && (
         <div className="map-style-switcher">
           {MAP_STYLES.map((s) => (
             <button
