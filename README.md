@@ -82,6 +82,22 @@ Tous les tests tournent contre une **vraie base PostgreSQL/PostGIS** (aucun mock
 
 **État actuel : 52 tests backend, tous verts (+ 6 tests frontend).**
 
+### Tests end-to-end (Playwright, `frontend/e2e/`)
+
+Le parcours critique (inscription → carte → favori → itinéraire →
+signalement → déconnexion) tourne contre les **vrais services** : backend
+Docker réel, OpenRouteService réel, MapTiler réel — aucun mock. Il faut donc
+une connexion internet et les clés API configurées.
+
+```bash
+docker compose up -d          # backend + base (depuis la racine)
+cd frontend && npm run dev    # serveur Vite sur :5173 (autre terminal)
+npm run test:e2e              # Edge headless (canal msedge, pas d'install navigateur)
+```
+
+Les comptes `e2e-*@example.com` restant en base sont des artefacts de test
+attendus (base de dev), pas un problème — aucun nettoyage automatique.
+
 ## Architecture
 
 ```

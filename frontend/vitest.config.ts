@@ -15,6 +15,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // La suite Playwright (e2e/, vrais services) n'est jamais ramassée par
+    // vitest : ce sont des specs navigateur, pas des tests unitaires jsdom.
+    exclude: ['e2e/**', 'node_modules/**'],
     // Base d'URL réaliste pour les assertions sur les appels API.
     env: {
       VITE_API_URL: 'http://localhost:4000/api',

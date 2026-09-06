@@ -35,3 +35,7 @@ Thumbs.db
 
 # typescript
 *.tsbuildinfo
+
+# playwright (artefacts d'échec e2e : screenshots, traces)
+frontend/test-results/
+frontend/playwright-report/
