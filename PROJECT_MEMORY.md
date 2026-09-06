@@ -2,7 +2,7 @@
 
 > **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
 
-Dernière mise à jour : **2026-09-06 17:30**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+Dernière mise à jour : **2026-09-06 18:55**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
 
 **Règle adoptée pendant cette session (2026-09-06 17:05), à appliquer systématiquement** : avant d'adopter tout nouvel outil/service externe dans ce projet (librairie, API tierce, etc.), faire une recherche réelle (web + test empirique si possible) sur sa fiabilité/ses limites plutôt que de se fier à sa réputation ou sa documentation seule — c'est exactement ce qui a révélé qu'OSRM ne distinguait pas ses profils malgré ce qu'affirme sa propre doc (voir §4).
 
@@ -30,7 +30,7 @@ Dernière mise à jour : **2026-09-06 17:30**, par la session Claude Opus 5 qui 
 - `auth` — signup, login (rate-limité), logout, `/me`, sessions opaques en base, argon2id
 - `stops` — recherche géospatiale PostGIS (`ST_DWithin` + index GiST), détail d'un arrêt
 - `favorites` — ajout/liste/suppression, scopé strictement par utilisateur (protection IDOR testée)
-- `reports` — création de signalement, liste "mes signalements", modération admin (liste + changement de statut), protection `requireAdmin` stricte
+- `reports` — création de signalement, liste "mes signalements", modération admin (liste + changement de statut), protection `requireAdmin` stricte (écran admin frontend maintenant fait aussi, voir plus bas)
 - `routing` — proxy OSRM (calcul d'itinéraire, un seul profil "driving" exposé — voir §4)
 - Import batch GTFS réel (JungleBus, Grand Abidjan) : 3 820 arrêts nommés, 391 lignes bus/gbaka/woro-woro
 
@@ -38,25 +38,24 @@ Dernière mise à jour : **2026-09-06 17:30**, par la session Claude Opus 5 qui 
 - Carte MapLibre + MapTiler (5 styles commutables : rues/basique/plein air/satellite/hybride), fallback OSM si clé absente
 - Géolocalisation réelle, bouton recentrer, marqueur de position
 - Panneau détail d'arrêt (bottom-sheet mobile / panneau latéral desktop responsive)
-- Pages login/signup fonctionnelles, routage react-router-dom (`/`, `/login`, `/signup`)
-- Bandeau d'état de connexion (`AuthStatus`) intégré à la page d'accueil
+- Pages login/signup fonctionnelles, routage react-router-dom (`/`, `/login`, `/signup`, `/favorites`, `/reports`, `/admin/reports`)
+- Bandeau d'état de connexion (`AuthStatus`) intégré à la page d'accueil, avec liens Favoris/Signalements (connecté) et Modération (admin uniquement)
+- Panneau détail d'arrêt enrichi : favori, calcul d'itinéraire (3 profils ORS, tracé sur la carte), signalement (formulaire inline)
+- Écran `/reports` (mes signalements) et `/admin/reports` (modération : filtres par statut, actions Approuver/Rejeter/Résoudre)
 - Icônes SVG inlinées depuis Lucide (licence documentée)
 
 **Tests** :
-- Backend : **50 tests** d'intégration réels (vitest + vraie base PostgreSQL/PostGIS dockerisée, zéro mock de la DB)
-- Frontend : **6 tests** de composants (vitest + jsdom + testing-library, fetch mocké — première suite de tests frontend du projet)
+- Backend : **52 tests** d'intégration réels (vitest + vraie base PostgreSQL/PostGIS dockerisée, zéro mock de la DB)
+- Frontend : **35 tests** de composants/hooks (vitest + jsdom + testing-library, fetch mocké)
 
 ### Fonctionnalités en cours / partiellement faites 🚧
 
-- Rien "en cours" au sens strict au moment de la rédaction — le dernier lot (auth screens) est terminé et commité.
+- Rien "en cours" au sens strict au moment de la rédaction — **tous les écrans MVP haute priorité (§9) sont maintenant terminés et commités**, y compris la modération admin.
 
-### Fonctionnalités restantes ❌ (périmètre MVP, pas encore commencées)
+### Fonctionnalités restantes ❌ (au-delà du MVP core, voir §9 pour le détail priorisé)
 
-- Écran favoris (liste, ajout/suppression depuis l'UI — le backend existe, pas l'écran)
-- Écran signalements (création + liste "mes signalements" côté UI — le backend existe, pas l'écran)
-- Écran de modération admin (le backend existe, pas l'écran)
-- Écran/UI de calcul d'itinéraire (le backend `routing` existe, pas d'écran qui l'utilise)
-- Tests d'intégration end-to-end frontend↔backend (actuellement le frontend mocke fetch dans ses tests ; aucun test ne vérifie le vrai câblage front+back ensemble, hormis les vérifications manuelles en navigateur faites pendant le développement)
+- "Suivre mon trajet" (position passager en direct sur l'itinéraire calculé) — différenciateur validé par la recherche (§5bis), pas encore implémenté
+- Tests d'intégration end-to-end frontend↔backend automatisés (le câblage complet a été vérifié manuellement en navigateur réel piloté à chaque lot, mais rien de tout ça n'est dans la suite de tests committée)
 
 ### Explicitement HORS MVP (décision produit, pas oubli)
 
@@ -64,7 +63,7 @@ Météo, mode hors-ligne, historique de recherche, comparaison d'itinéraires mu
 
 ### État global
 
-**Backend : solide et testé.** Tous les modules du périmètre MVP existent, sont testés (50/50), et ont été vérifiés en conteneur Docker. **Frontend : partiellement construit.** La carte et l'auth fonctionnent et sont vérifiées en navigateur réel ; les écrans favoris/signalements/admin/itinéraire restent à faire.
+**Backend : solide et testé.** Tous les modules du périmètre MVP existent, sont testés (52/52), et ont été vérifiés en conteneur Docker. **Frontend : MVP complet.** Carte, auth, favoris, itinéraire, signalements et modération admin fonctionnent tous et ont été vérifiés en navigateur réel (Playwright, pas seulement `tsc`/`build`/`vitest`). Prochaine étape : dépasser le MVP (voir §9 🟠/🟢 et §5bis "Suivre mon trajet").
 
 ---
 
@@ -330,6 +329,7 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 17:45 | `3494b9e` | Écran favoris, délégué à OpenCode | 2 bugs de layout desktop trouvés et corrigés (chevauchement bouton favori/fermer, puis panneau/topbar) via test navigateur réel |
 | 2026-09-06 18:14 | `be04a90` | Écran itinéraire intégré à la carte, délégué à OpenCode | 17/17 tests, flux complet vérifié en navigateur (760m/2min cohérent, tracé affiché), zéro bug de layout cette fois (panneau en flex-wrap, pas position:absolute) |
 | 2026-09-06 18:2x | `0b30b51` | Écran signalements (formulaire inline + liste), délégué à OpenCode | 25/25 tests, vérification backend curl particulièrement complète par l'agent lui-même (4 cas), flux complet confirmé en navigateur, zéro bug de layout (3 boutons du panneau détail cohabitent) |
+| 2026-09-06 18:55 | `0c44855` | Écran de modération admin (`/admin/reports`), délégué à OpenCode | 35/35 tests, vérification indépendante complète (tsc/vitest/build + test navigateur réel Playwright couvrant anonyme/non-admin/admin avec un vrai compte promu ADMIN en SQL, création+approbation réelle d'un signalement via l'UI, mobile vérifié) — **zéro bug trouvé**, tous les écrans MVP haute priorité (§9) sont désormais terminés |
 
 ---
 
@@ -404,11 +404,13 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 *(Mise à jour 2026-09-06 17:50, mode autonome — voir §5bis)*
 
-### 🔴 Priorité haute (fonctionnalités essentielles manquantes)
+### 🔴 Priorité haute (fonctionnalités essentielles) — **TOUTES FAITES**
 - ~~Écran favoris~~ ✅ fait (commit `3494b9e`)
 - ~~Écran itinéraire~~ ✅ fait (commit `be04a90`) — intégré au panneau détail d'un arrêt plutôt qu'une page séparée, tracé dessiné sur la carte, 3 profils réels
 - ~~Écran signalements~~ ✅ fait (commit `0b30b51`) — formulaire inline dans le panneau détail (3e bouton), page /reports pour la liste
-- Écran de modération admin (liste des signalements, changement de statut) — backend prêt et testé, aucun écran **← prochaine tâche, dernière du périmètre MVP haute priorité**
+- ~~Écran de modération admin~~ ✅ fait (commit `0c44855`) — filtres par statut, actions Approuver/Rejeter/Résoudre, lien Modération réservé aux admins, testé avec un vrai compte promu ADMIN
+
+**Le périmètre MVP haute priorité est intégralement terminé.** Prochaine étape : §5bis "Suivre mon trajet" puis les items 🟠 ci-dessous, sans attendre de validation (mode autonome, §5bis).
 
 ### 🟠 Priorité moyenne (UX/robustesse)
 - **Sécurité (audit `npm audit` fait le 2026-09-06 18:35)** : backend a 3 vulnérabilités "high" via `deepmerge-ts` (dépendance transitive de `@prisma/config`, utilisée par la CLI `prisma`, une devDependency). Risque réel jugé faible : ce code n'est jamais exécuté par `node dist/server.js` (le process qui tourne réellement), seulement si quelqu'un invoquait `npx prisma` avec une configuration malveillante — pas un vecteur d'attaque réseau. **Cause racine** : le `Dockerfile` fait `npm install` sans `--omit=dev` dans le build final, donc les devDependencies (dont `prisma` CLI) finissent dans l'image de production. Correctif simple rejeté pour l'instant : `npm audit fix --force` imposerait un downgrade Prisma cassant. Correctif propre (séparer un stage `prod-deps` avec `--omit=dev`) **reporté** car il casserait la commande pratique `docker compose exec backend npm run import:gtfs` (utilise `tsx`, une devDependency) sans plan de remplacement immédiat. Frontend : 0 vulnérabilité.
@@ -434,7 +436,7 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 **Mode autonome actif (§5bis) : la session enchaîne désormais les tâches de la §9 sans attendre de validation entre chacune**, sauf décision réellement risquée/irréversible.
 
-Ordre d'exécution décidé : (1) écran itinéraire — prérequis technique de "Suivre mon trajet" et backend déjà prêt/testé depuis le remplacement OSRM→ORS ; (2) écran signalements ; (3) écran modération admin ; (4) "Suivre mon trajet". Pattern établi à réutiliser à chaque fois : `LoginPage.tsx`/`FavoritesPage.tsx` + hook dédié (`useAuth.ts`/`useFavorites.ts`) pour la convention page+hook, délégation à OpenCode (gratuit, a bien fonctionné 3 fois) pour un premier jet suivi d'une revue + vérification indépendante systématique (tsc, vitest, ET navigateur réel piloté — deux lots consécutifs ont chacun révélé des bugs invisibles aux trois premières vérifications, voir §5).
+Ordre exécuté : (1) écran itinéraire ✅, (2) écran signalements ✅, (3) écran modération admin ✅ — **le périmètre MVP haute priorité est terminé** (2026-09-06 18:55). Prochaine tâche engagée : (4) "Suivre mon trajet" (§5bis/§9 🟠) — position du passager en direct sur le tracé ORS déjà calculé, alerte à l'approche. Pattern établi à réutiliser : délégation à OpenCode pour un premier jet suivi d'une revue + vérification indépendante systématique (tsc, vitest, ET navigateur réel piloté — quatre lots sur cinq ont révélé des bugs invisibles aux trois premières vérifications seules, voir §5 ; le 5e, la modération admin, est le premier lot sans aucun bug trouvé, ce qui valide que les patterns établis — flex-wrap, hooks dédiés — préviennent désormais la classe de bugs déjà rencontrée).
 
 ---
 
