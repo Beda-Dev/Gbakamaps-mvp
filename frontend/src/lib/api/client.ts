@@ -28,7 +28,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      // Content-Type: application/json UNIQUEMENT s'il y a un corps —
+      // Fastify rejette (500) un body vide envoyé avec ce header, ce qui
+      // cassait tout endpoint sans body (logout). Bug réel constaté en
+      // testant le flux complet dans un vrai navigateur.
+      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers,
     },
   });

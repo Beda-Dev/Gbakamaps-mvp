@@ -40,3 +40,22 @@ export interface NearbyStopsData {
   count: number;
   radius: number;
 }
+
+// Utilisateur public retourné par /api/auth/* (miroir de toPublicUser backend).
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface SignupInput {
+  email: string;
+  password: string;
+  displayName?: string;
+}

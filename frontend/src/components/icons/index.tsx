@@ -3,9 +3,9 @@
 // Copyright (c) Lucide Contributors. Icônes dérivées de Feather Icons,
 // Copyright (c) Cole Bemis, licence MIT. Voir LICENSES-ICONS.md.
 //
-// Choix : copier les 3 icônes nécessaires plutôt qu'ajouter la dépendance
+// Choix : copier les 5 icônes nécessaires plutôt qu'ajouter la dépendance
 // lucide-react (bundle déjà lourd avec MapLibre ~1,2 Mo — pas de librairie
-// d'icônes complète pour 3 usages).
+// d'icônes complète pour 5 usages).
 // =============================================================================
 import type { SVGProps } from 'react';
 
@@ -54,6 +54,29 @@ export function LoaderIcon(props: SVGProps<SVGSVGElement>) {
       <path d="m4.9 19.1 2.9-2.9" />
       <path d="M2 12h4" />
       <path d="m4.9 4.9 2.9 2.9" />
+    </svg>
+  );
+}
+
+// Icônes œil (afficher/masquer le mot de passe), copiées depuis
+// https://lucide.dev/icons/eye et https://lucide.dev/icons/eye-off,
+// même licence ISC que ci-dessus (voir LICENSES-ICONS.md).
+export function EyeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+export function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+      <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+      <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+      <path d="m2 2 20 20" />
     </svg>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useHealth } from '@/hooks/useHealth';
 import { useNearbyStops } from '@/hooks/useNearbyStops';
+import { AuthStatus } from '@/components/AuthStatus';
 import { StopsMap } from '@/components/StopsMap';
 import { XIcon } from '@/components/icons';
 import type { Stop } from '@/lib/api/types';
@@ -58,6 +59,10 @@ export function HomePage() {
 
   return (
     <div className={`home${selectedStop ? ' has-detail' : ''}`}>
+      {/* Bandeau discret d'état de connexion : la carte reste publique. */}
+      <div className="home__topbar">
+        <AuthStatus />
+      </div>
       <header className="home__banner">
         {health.isLoading && <span>Connexion au serveur…</span>}
         {health.isError && (

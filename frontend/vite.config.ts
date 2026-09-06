@@ -53,5 +53,18 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
+    // VITE_API_URL="/api" (voir .env.example) suppose que le front et l'API
+    // sont servis en same-origin — nécessaire pour que le cookie de session
+    // (SameSite=Lax) parte sans jonglerie CORS/credentials. En dev, ce proxy
+    // fait ce que ferait un reverse proxy (nginx, etc.) en production : il
+    // FAUT reproduire cette règle ("/api" -> backend) au déploiement, sinon
+    // le front pointera vers lui-même et tout appel API renverra 404 (bug
+    // constaté et corrigé pendant le développement de ce module).
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+    },
   },
 });
