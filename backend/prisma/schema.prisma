@@ -103,6 +103,7 @@ model Stop {
   stopLines StopLine[]
 
   @@index([lat, lon])
+  @@index([geog(ops: raw("gist_geography_ops"))], type: Gist)
   @@map("stops")
 }
 

@@ -1,0 +1,32 @@
+-- =============================================================================
+-- Restauration de l'index spatial GiST sur "stops"."geog".
+--
+-- CONTEXTE : cet index avait été créé par la migration
+-- 20260906004315_add_postgis_geography, puis supprimé SANS INTENTION par
+-- 20260906205221_add_stopline_route_timing (qui commence par un
+-- `DROP INDEX "stops_geog_idx"` que personne n'avait demandé).
+--
+-- CAUSE RACINE : la colonne "geog" est déclarée `Unsupported(...)` côté
+-- Prisma, donc son index n'était pas non plus déclaré dans schema.prisma.
+-- Au moment de générer la migration suivante, le diff Prisma a vu en base un
+-- index absent du schéma et l'a donc considéré comme "en trop" — il l'a
+-- supprimé de lui-même. Le piège se serait re-déclenché à chaque
+-- `prisma migrate dev` ultérieur.
+--
+-- CONSÉQUENCE MESURÉE avant correctif (EXPLAIN ANALYZE réel sur un
+-- ST_DWithin de 1 km au Plateau, base de 3820 arrêts) :
+--   Seq Scan on stops ... Rows Removed by Filter: 3766
+-- Autrement dit la recherche de proximité re-scannait toute la table à chaque
+-- appel — exactement la limite de l'ancien projet (bounding box + Haversine
+-- JS non indexé) que le choix de PostGIS était censé corriger
+-- (cf. PROJECT_MEMORY.md §4).
+--
+-- CORRECTIF DURABLE : en plus de recréer l'index ici, il est désormais
+-- DÉCLARÉ dans schema.prisma :
+--   @@index([geog(ops: raw("gist_geography_ops"))], type: Gist)
+-- Prisma le connaît donc, et ne le supprimera plus jamais tout seul.
+-- Ne pas retirer cette déclaration du schéma en pensant qu'elle est inutile :
+-- c'est elle qui empêche la régression de revenir.
+-- =============================================================================
+
+CREATE INDEX IF NOT EXISTS "stops_geog_idx" ON "stops" USING GIST ("geog" gist_geography_ops);
