@@ -9,7 +9,7 @@
 // les horaires GTFS 2021 ou une approximation, coût vérifié par un admin ou
 // indicatif) — jamais présentée comme une donnée exacte garantie.
 // =============================================================================
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStopSearch } from '@/hooks/useStopSearch';
 import {
@@ -82,6 +82,7 @@ function PlaceField({
   const { text, search, clear, isPending, results, isError } = useStopSearch(near);
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listboxId = useId();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -119,6 +120,11 @@ function PlaceField({
           <input
             id={id}
             type="search"
+            role="combobox"
+            aria-haspopup="listbox"
+            aria-expanded={showDropdown}
+            aria-controls={listboxId}
+            aria-autocomplete="list"
             className="trip-field__input"
             placeholder="Chercher un arrêt…"
             value={text}
@@ -136,7 +142,7 @@ function PlaceField({
         )}
       </div>
       {showDropdown && (
-        <ul className="trip-field__results" role="listbox">
+        <ul className="trip-field__results" id={listboxId} role="listbox">
           {isError && (
             <li className="trip-field__message" role="alert">
               Recherche indisponible. Réessayez.

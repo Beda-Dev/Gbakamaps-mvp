@@ -1,5 +1,11 @@
 :root {
-  --color-primary: #0a9396;
+  /* Assombri depuis #0A9396 (audit d'accessibilité réel, axe-core,
+     2026-09-06) : 3,73:1 sur fond blanc, sous le minimum WCAG 2 AA (4,5:1
+     pour du texte de taille normale) — #087376 atteint 5,64:1, même teinte
+     perçue. Les couleurs de la carte (arrêts, tracé d'itinéraire) restent
+     inchangées : ce sont des repères visuels sur fond de carte, pas du
+     texte/UI soumis à cette règle de contraste. */
+  --color-primary: #087376;
   --color-bg: #fafafa;
   --color-text: #14213d;
   /* Hauteur fixe de .home__topbar — partagée avec .home__detail (desktop)
@@ -63,6 +69,19 @@ button:disabled {
   flex-direction: column;
   height: 100%;
   position: relative;
+}
+
+/* Repère <main> ajouté pour l'accessibilité (audit axe-core, 2026-09-06) —
+   reproduit exactement le comportement flex que .home__map/.home__detail/
+   .home__count avaient en étant des enfants directs de .home, pour ne rien
+   changer visuellement. Volontairement SANS `position` : .home__detail
+   (position:absolute) doit continuer à se positionner par rapport à .home
+   (son ancêtre positionné le plus proche), pas par rapport à ce wrapper. */
+.home__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .home__banner {
@@ -378,7 +397,10 @@ button:disabled {
 
 .stop-search__result-lines {
   font-size: 0.75rem;
-  color: #777;
+  /* #6b6b6b (au lieu de #777, 4,478:1) : audit d'accessibilité réel
+     (axe-core, 2026-09-06) — #777 sur blanc était sous le seuil WCAG AA
+     (4,5:1), corrigé partout où ce gris secondaire était réutilisé. */
+  color: #6b6b6b;
 }
 
 .map-style-switcher {
@@ -683,7 +705,7 @@ button:disabled {
 
 .auth__optional {
   font-weight: 400;
-  color: #777;
+  color: #6b6b6b;
 }
 
 .auth__input {
@@ -1862,7 +1884,7 @@ textarea.home__report-input {
 .trip-planner__note {
   margin: 0;
   font-size: 0.78rem;
-  color: #777;
+  color: #6b6b6b;
   font-style: italic;
 }
 
@@ -1974,7 +1996,7 @@ textarea.home__report-input {
 
 .trip-plan-card__distance {
   font-size: 0.85rem;
-  color: #777;
+  color: #6b6b6b;
 }
 
 .trip-plan-card__meta {

@@ -49,7 +49,12 @@ export function StopSearchBar({ near, onSelectStop }: StopSearchBarProps) {
         <SearchIcon width={18} height={18} aria-hidden="true" className="stop-search__icon" />
         <input
           type="search"
-          role="searchbox"
+          // role="combobox" (pas "searchbox") : c'est le seul rôle ARIA qui
+          // autorise aria-expanded/aria-controls sur un champ de saisie —
+          // bug réel trouvé par un audit axe-core (aria-allowed-attr,
+          // "searchbox" ne supporte pas aria-expanded), 2026-09-06.
+          role="combobox"
+          aria-haspopup="listbox"
           className="stop-search__input"
           placeholder="Chercher un arrêt, une ligne…"
           value={text}

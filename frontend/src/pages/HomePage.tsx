@@ -610,10 +610,14 @@ export function HomePage() {
 
   return (
     <div className={`home${selectedStop ? ' has-detail' : ''}`}>
-      {/* Bandeau discret d'état de connexion : la carte reste publique. */}
-      <div className="home__topbar">
+      {/* Bandeau discret d'état de connexion : la carte reste publique.
+          <nav> plutôt qu'un <div> nu : contient les liens de navigation de
+          l'utilisateur (planifier/favoris/signalements/connexion) — trouvé
+          par un audit d'accessibilité réel (axe-core, règle "region", ce
+          contenu n'était contenu par aucun repère de page), 2026-09-06. */}
+      <nav className="home__topbar" aria-label="Navigation utilisateur">
         <AuthStatus />
-      </div>
+      </nav>
       <header className="home__banner">
         {health.isLoading && <span>Connexion au serveur…</span>}
         {health.isError && (
@@ -629,6 +633,11 @@ export function HomePage() {
         )}
       </header>
 
+      {/* <main> englobe la carte, le panneau détail et le compteur d'arrêts
+          — sans lui, le contenu injecté par MapLibre (attribution, contrôles)
+          et certains textes n'étaient contenus par aucun repère de page
+          (même audit que la <nav> ci-dessus). */}
+      <main className="home__main">
       <div className="home__map">
         <StopSearchBar near={userLocation ?? center} onSelectStop={handleSelectFromSearch} />
         {stops.isLoading && (
@@ -710,6 +719,7 @@ export function HomePage() {
           {stops.data.count} arrêt{stops.data.count > 1 ? 's' : ''} dans un rayon de {stops.data.radius}m
         </p>
       )}
+      </main>
     </div>
   );
 }
