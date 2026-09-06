@@ -19,7 +19,7 @@ import {
 } from '@/hooks/useRoute';
 import { haversineDistanceMeters, useLiveTracking } from '@/hooks/useLiveTracking';
 import { AuthStatus } from '@/components/AuthStatus';
-import { StopsMap } from '@/components/StopsMap';
+import { STOP_TYPE_LABELS, StopsMap } from '@/components/StopsMap';
 import { StopSearchBar } from '@/components/StopSearchBar';
 import {
   BikeIcon,
@@ -710,15 +710,29 @@ export function HomePage() {
               />
               <ReportToStopButton key={`report-${selectedStop.id}`} stop={selectedStop} />
             </div>
-            <p>{selectedStop.stopType}</p>
-            {selectedStop.lines.length > 0 && (
-              <ul className="home__lines">
-                {selectedStop.lines.map((line) => (
-                  <li key={line.id} style={{ borderColor: line.color ?? '#0A9396' }}>
-                    {line.shortName ?? ''} {line.name}
-                  </li>
-                ))}
-              </ul>
+            <p className="home__detail-meta">
+              {STOP_TYPE_LABELS[selectedStop.stopType] ?? selectedStop.stopType}
+              {userLocation && (
+                <> · à {formatRouteDistance(haversineDistanceMeters(userLocation, selectedStop))} de vous</>
+              )}
+            </p>
+            {selectedStop.lines.length > 0 ? (
+              <>
+                <p className="home__detail-meta">
+                  {selectedStop.lines.length > 1
+                    ? `Correspondance possible entre ${selectedStop.lines.length} lignes :`
+                    : 'Ligne desservant cet arrêt :'}
+                </p>
+                <ul className="home__lines">
+                  {selectedStop.lines.map((line) => (
+                    <li key={line.id} style={{ borderColor: line.color ?? '#0A9396' }}>
+                      {line.shortName ?? ''} {line.name}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="home__detail-meta">Aucune ligne connue desservant cet arrêt pour l'instant.</p>
             )}
           </>
         )}

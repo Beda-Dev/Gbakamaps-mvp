@@ -23,6 +23,7 @@ import {
   Marker,
   NavigationControl,
   Popup,
+  type DataDrivenPropertyValueSpecification,
   type GeoJSONSource,
   type StyleSpecification,
 } from 'maplibre-gl';
@@ -97,7 +98,7 @@ export const STOP_TYPE_COLORS: Record<string, string> = {
   STATION: '#005F73',
 };
 
-const STOP_TYPE_LABELS: Record<string, string> = {
+export const STOP_TYPE_LABELS: Record<string, string> = {
   BUS_STOP: 'Bus',
   GBAKA_STOP: 'Gbaka',
   WORO_WORO_STOP: 'Woro-woro',
@@ -106,6 +107,13 @@ const STOP_TYPE_LABELS: Record<string, string> = {
   STATION: 'Gare / Station',
   PLATFORM: 'Quai',
 };
+
+// Expression MapLibre "match" dérivée de STOP_TYPE_COLORS — un seul endroit
+// à maintenir pour la légende, les marqueurs et le style des points groupés.
+function stopTypeColorExpression(): DataDrivenPropertyValueSpecification<string> {
+  const pairs = Object.entries(STOP_TYPE_COLORS).flat();
+  return ['match', ['get', 'stopType'], ...pairs, '#0A9396'] as unknown as DataDrivenPropertyValueSpecification<string>;
+}
 
 // Un segment du plan de trajet multi-modal (marche ou trajet en ligne) tel
 // qu'affiché sur la carte — cf. buildTripSegments dans TripPlannerPage.tsx.
@@ -194,6 +202,83 @@ function upsertTripSegmentsLayer(map: Map, segments: TripSegment[] | null): void
   );
 }
 
+// Arrêts affichés via une source GeoJSON groupée (clustering natif MapLibre/
+// supercluster) plutôt que des Markers DOM un par un : à faible zoom, de
+// nombreux arrêts proches (hub, gare) sont regroupés en un seul cercle
+// numéroté — décongestionnement réel de la carte demandé explicitement
+// ("clarté cartographique... décongestion intelligente selon le zoom"), pas
+// un simple habillage. Un clic sur un groupe zoome pour le faire éclater ;
+// un clic sur un point isolé sélectionne l'arrêt réel (jamais un groupe
+// présenté comme s'il s'agissait d'un arrêt unique).
+const STOPS_SOURCE_ID = 'stops';
+const STOPS_CLUSTER_LAYER_ID = 'stops-clusters';
+const STOPS_CLUSTER_COUNT_LAYER_ID = 'stops-cluster-count';
+const STOPS_UNCLUSTERED_LAYER_ID = 'stops-unclustered';
+const STOPS_CLICKABLE_LAYER_IDS = [STOPS_CLUSTER_LAYER_ID, STOPS_UNCLUSTERED_LAYER_ID];
+
+function stopsToFeatureCollection(stops: Stop[]) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: stops.map((stop) => ({
+      type: 'Feature' as const,
+      properties: { id: stop.id, stopType: stop.stopType },
+      geometry: { type: 'Point' as const, coordinates: [stop.lon, stop.lat] },
+    })),
+  };
+}
+
+function upsertStopsSource(map: Map, stops: Stop[]): void {
+  const data = stopsToFeatureCollection(stops);
+  const existing = map.getSource(STOPS_SOURCE_ID);
+  if (existing && existing.type === 'geojson') {
+    (existing as GeoJSONSource).setData(data);
+    return;
+  }
+  map.addSource(STOPS_SOURCE_ID, {
+    type: 'geojson',
+    data,
+    cluster: true,
+    clusterMaxZoom: 16,
+    clusterRadius: 45,
+  });
+  map.addLayer({
+    id: STOPS_CLUSTER_LAYER_ID,
+    type: 'circle',
+    source: STOPS_SOURCE_ID,
+    filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': '#005F73',
+      'circle-radius': ['step', ['get', 'point_count'], 16, 10, 20, 30, 26],
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#ffffff',
+    },
+  });
+  map.addLayer({
+    id: STOPS_CLUSTER_COUNT_LAYER_ID,
+    type: 'symbol',
+    source: STOPS_SOURCE_ID,
+    filter: ['has', 'point_count'],
+    layout: {
+      'text-field': ['get', 'point_count_abbreviated'],
+      'text-size': 12,
+      'text-font': ['Noto Sans Bold', 'Open Sans Bold', 'Arial Unicode MS Bold'],
+    },
+    paint: { 'text-color': '#ffffff' },
+  });
+  map.addLayer({
+    id: STOPS_UNCLUSTERED_LAYER_ID,
+    type: 'circle',
+    source: STOPS_SOURCE_ID,
+    filter: ['!', ['has', 'point_count']],
+    paint: {
+      'circle-color': stopTypeColorExpression(),
+      'circle-radius': 8,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#ffffff',
+    },
+  });
+}
+
 // Crée ou met à jour le tracé ; le supprime nettement si geometry est null
 // (pas de tracé fantôme). La couche est insérée SOUS la première couche de
 // symboles du style quand il y en a une : le tracé ne masque ni les noms de
@@ -250,17 +335,37 @@ export function StopsMap({
 }: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
-  const markersRef = useRef<Marker[]>([]);
   const userMarkerRef = useRef<Marker | null>(null);
   const originMarkerRef = useRef<Marker | null>(null);
   const destinationMarkerRef = useRef<Marker | null>(null);
   const tripSegmentsRef = useRef<TripSegment[] | null>(null);
-  // Callback de clic toujours à jour sans réattacher l'écouteur MapLibre à
-  // chaque re-render (la carte ne doit s'initialiser qu'une fois, cf. plus bas).
+  const stopsPopupRef = useRef<Popup | null>(null);
+  // Table de correspondance id → arrêt complet, pour retrouver l'objet Stop
+  // réel (nom, lignes…) au clic sur un point de la couche groupée (les
+  // propriétés GeoJSON d'un feature ne portent que l'id, pas l'objet entier).
+  // Un objet simple, pas `Map` : ce nom désigne ici la classe MapLibre.
+  const stopsByIdRef = useRef<Record<string, Stop>>({});
+  // Dernière liste d'arrêts connue, pour redessiner la couche groupée après
+  // un changement de style (setStyle purge les sources/couches perso).
+  const stopsRef = useRef<Stop[]>([]);
+  useEffect(() => {
+    stopsByIdRef.current = Object.fromEntries(stops.map((s) => [s.id, s]));
+    stopsRef.current = stops;
+  }, [stops]);
+  // Callbacks toujours à jour sans réattacher les écouteurs MapLibre à chaque
+  // re-render (la carte ne doit s'initialiser qu'une fois, cf. plus bas).
   const onMapClickRef = useRef(onMapClick);
+  const onSelectStopRef = useRef(onSelectStop);
+  const pickerActiveRef = useRef(pickerActive);
   useEffect(() => {
     onMapClickRef.current = onMapClick;
   }, [onMapClick]);
+  useEffect(() => {
+    onSelectStopRef.current = onSelectStop;
+  }, [onSelectStop]);
+  useEffect(() => {
+    pickerActiveRef.current = pickerActive;
+  }, [pickerActive]);
   // Dernière géométrie connue : permet de redessiner le tracé après un
   // changement de style (setStyle purge les sources/couches perso).
   const routeGeometryRef = useRef<RouteGeometry | null>(null);
@@ -290,6 +395,7 @@ export function StopsMap({
       if (geometry) upsertRouteLayer(map, geometry);
       const segments = tripSegmentsRef.current;
       if (segments) upsertTripSegmentsLayer(map, segments);
+      upsertStopsSource(map, stopsRef.current);
     });
   }
 
@@ -306,11 +412,68 @@ export function StopsMap({
     map.once('load', () => setMapReady(true));
 
     // Sélection d'un point par clic (origine/destination du planificateur) —
-    // ignoré si aucun champ n'attend de sélection, ou si le clic touche un
-    // marqueur (élément DOM séparé, ne déclenche pas cet événement carte).
+    // ignoré si aucun champ n'attend de sélection. N'est déclenché que si le
+    // clic n'a pas déjà été intercepté par un groupe/point d'arrêt (voir
+    // gestionnaires ci-dessous, qui utilisent le même événement 'click' natif
+    // — MapLibre exécute les écouteurs de couche puis celui-ci dans l'ordre
+    // d'ajout, donc after clic sur un point on choisit quand même de propager
+    // ici : un point de destination possible reste sélectionnable au clic
+    // même s'il coïncide avec un arrêt, cf. gestion plus bas qui court-circuite
+    // via un drapeau).
+    let stopClickHandled = false;
     map.on('click', (e) => {
+      if (stopClickHandled) {
+        stopClickHandled = false;
+        return;
+      }
       onMapClickRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
     });
+
+    // Clic sur un groupe d'arrêts : zoom pour le faire éclater (comportement
+    // standard de décongestion MapLibre/supercluster) — jamais présenté comme
+    // la sélection d'un arrêt unique.
+    map.on('click', STOPS_CLUSTER_LAYER_ID, (e) => {
+      stopClickHandled = true;
+      const feature = e.features?.[0];
+      const clusterId = feature?.properties?.cluster_id;
+      const source = map.getSource(STOPS_SOURCE_ID) as GeoJSONSource | undefined;
+      if (!source || clusterId === undefined || feature?.geometry.type !== 'Point') return;
+      const center = feature.geometry.coordinates as [number, number];
+      source.getClusterExpansionZoom(clusterId).then((zoom) => {
+        map.easeTo({ center, zoom });
+      }).catch(() => {
+        // Échec ponctuel de calcul de zoom (source pas encore prête) : sans
+        // conséquence grave, l'utilisateur peut zoomer manuellement.
+      });
+    });
+
+    // Clic sur un point isolé : retrouve l'arrêt réel via son id (les
+    // propriétés du feature ne portent que l'id, pas l'objet Stop complet) et
+    // affiche son nom en popup + notifie le sélecteur (panneau détail).
+    map.on('click', STOPS_UNCLUSTERED_LAYER_ID, (e) => {
+      stopClickHandled = true;
+      const feature = e.features?.[0];
+      const id = feature?.properties?.id as string | undefined;
+      const stop = id ? stopsByIdRef.current[id] : undefined;
+      if (!stop || feature?.geometry.type !== 'Point') return;
+      stopsPopupRef.current?.remove();
+      stopsPopupRef.current = new Popup({ offset: 12 })
+        .setLngLat(feature.geometry.coordinates as [number, number])
+        .setText(stop.name ?? 'Arrêt sans nom')
+        .addTo(map);
+      onSelectStopRef.current?.(stop);
+    });
+
+    // Curseur "main" au survol d'un élément sélectionnable — sauf pendant une
+    // sélection de point par clic (crosshair prioritaire, géré séparément).
+    for (const layerId of STOPS_CLICKABLE_LAYER_IDS) {
+      map.on('mouseenter', layerId, () => {
+        if (!pickerActiveRef.current) map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', layerId, () => {
+        map.getCanvas().style.cursor = pickerActiveRef.current ? 'crosshair' : '';
+      });
+    }
 
     // Bascule automatique clé 1 → clé 2 → OSM sur un échec RÉEL de
     // chargement MapTiler (clé invalide, quota dépassé, panne) — jamais sur
@@ -425,33 +588,14 @@ export function StopsMap({
     applyStyle(mapRef.current, id);
   }
 
+  // Source/couches groupées des arrêts — recréées après un changement de
+  // style (setStyle purge tout), mises à jour en place sinon (setData, pas de
+  // flash de disparition/réapparition à chaque nouveau rayon de recherche).
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = stops.map((stop) => {
-      const color = STOP_TYPE_COLORS[stop.stopType] ?? '#0A9396';
-      const marker = new Marker({ color })
-        .setLngLat([stop.lon, stop.lat])
-        .setPopup(new Popup({ offset: 12 }).setText(stop.name ?? 'Arrêt sans nom'))
-        .addTo(map);
-
-      // Classe pour l'animation d'entrée (le positionnement MapLibre vit sur
-      // l'élément lui-même, donc le CSS anime le <svg> interne, pas le wrapper).
-      marker.getElement().classList.add('stop-marker');
-
-      if (onSelectStop) {
-        marker.getElement().addEventListener('click', () => onSelectStop(stop));
-      }
-      return marker;
-    });
-
-    return () => {
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
-    };
-  }, [stops, onSelectStop, mapReady]);
+    upsertStopsSource(map, stops);
+  }, [stops, mapReady]);
 
   // Marqueur de la position utilisateur (point bleu + halo, style Maps).
   useEffect(() => {

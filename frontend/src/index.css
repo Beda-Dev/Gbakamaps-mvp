@@ -302,6 +302,12 @@ button:disabled {
   background: #f0f0f0;
 }
 
+.home__detail-meta {
+  margin: 0.35rem 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, #6b6b6b);
+}
+
 .home__lines {
   list-style: none;
   padding: 0;
@@ -529,23 +535,12 @@ button:disabled {
   }
 }
 
-/* --- Animation d'entrée des marqueurs d'arrêts (scale/fade). --------------- */
-/* Le positionnement MapLibre vit sur le wrapper : on anime le <svg> interne. */
-.stop-marker svg {
-  animation: marker-pop 0.35s ease both;
-  transform-origin: bottom center;
-}
-
-@keyframes marker-pop {
-  from {
-    transform: scale(0.4);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
+/* L'animation d'entrée des arrêts (scale/fade sur des Markers DOM) a été
+   retirée avec le passage à une couche groupée (clustering) — les arrêts
+   sont désormais des cercles peints par MapLibre (paint/circle-radius), pas
+   des éléments DOM individuels : rien à animer en CSS pour eux (cf. §12.11
+   PROJECT_MEMORY.md). Les marqueurs DOM restants (position utilisateur,
+   origine/destination du planificateur) n'utilisent pas cette classe. */
 
 /* --- Légende des couleurs, encart discret en coin de carte. ----------------- */
 .map-legend {
