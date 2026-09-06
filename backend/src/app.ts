@@ -14,6 +14,7 @@ import { healthRoutes } from './modules/health/health.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { stopsRoutes } from './modules/stops/stops.routes.js';
 import { favoritesRoutes } from './modules/favorites/favorites.routes.js';
+import { reportsRoutes } from './modules/reports/reports.routes.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -64,6 +65,7 @@ export async function buildApp() {
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(stopsRoutes, { prefix: '/api' });
   await app.register(favoritesRoutes, { prefix: '/api' });
+  await app.register(reportsRoutes, { prefix: '/api' });
 
   // Modules métier suivants enregistrés ici (reports, favorites, routing)
 
