@@ -149,3 +149,14 @@ export function FlagIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// Icône navigation (bouton "Suivre mon trajet" — repère du passager pendant
+// son propre déplacement), copiée depuis https://lucide.dev/icons/navigation,
+// même licence ISC (voir LICENSES-ICONS.md).
+export function NavigationIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <polygon points="3 11 22 2 13 21 11 13 3 11" />
+    </svg>
+  );
+}

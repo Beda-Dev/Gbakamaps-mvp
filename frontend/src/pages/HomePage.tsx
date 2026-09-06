@@ -17,6 +17,7 @@ import {
   type RouteGeometry,
   type RouteProfile,
 } from '@/hooks/useRoute';
+import { haversineDistanceMeters, useLiveTracking } from '@/hooks/useLiveTracking';
 import { AuthStatus } from '@/components/AuthStatus';
 import { StopsMap } from '@/components/StopsMap';
 import {
@@ -25,6 +26,7 @@ import {
   FlagIcon,
   FootprintsIcon,
   LoaderIcon,
+  NavigationIcon,
   RouteIcon,
   StarIcon,
   XIcon,
@@ -108,25 +110,71 @@ const ROUTE_PROFILES = [
 // repliable (sélecteur de profil + résultat) s'affiche SOUS la ligne de titre
 // (flex-wrap sur .home__detail-title, panel en flex-basis 100%) : aucun
 // chevauchement avec le bouton fermer positionné en absolu en haut à droite.
+//
+// Une fois l'itinéraire calculé, le panneau propose aussi "Suivre mon trajet" :
+// repère du PASSAGER pendant son propre déplacement (sa position GPS réelle
+// progresse sur la carte via la prop userLocation déjà branchée sur StopsMap
+// — PAS du suivi de véhicule, aucun marqueur supplémentaire).
 function RouteToStopButton({
   stop,
   userLocation,
   isLocating,
   onRequestLocation,
   onGeometryChange,
+  onLivePositionChange,
 }: {
   stop: Stop;
   userLocation: { lat: number; lon: number } | null;
   isLocating: boolean;
   onRequestLocation: () => void;
   onGeometryChange: (geometry: RouteGeometry | null) => void;
+  onLivePositionChange: (position: { lat: number; lon: number }) => void;
 }) {
   const route = useRoute();
+  const {
+    position: livePosition,
+    isTracking,
+    error: trackingError,
+    start: startTracking,
+    stop: stopTracking,
+  } = useLiveTracking();
   const [expanded, setExpanded] = useState(false);
   const [lastProfile, setLastProfile] = useState<RouteProfile | null>(null);
+  // Arrivée constatée (< 30 m) : le suivi est arrêté automatiquement, le
+  // message reste affiché jusqu'au prochain démarrage ou à l'effacement.
+  const [hasArrived, setHasArrived] = useState(false);
+
+  // Distance restante jusqu'à l'arrêt de destination, recalculée à chaque
+  // position live (haversine directe — le tracé useRoute ne se recalcule pas
+  // en continu, c'est un simple repère de proximité).
+  const remainingMeters =
+    livePosition === null
+      ? null
+      : haversineDistanceMeters(livePosition, { lat: stop.lat, lon: stop.lon });
+
+  // Chaque position live remonte à HomePage qui l'injecte dans la prop
+  // userLocation de StopsMap : le point bleu existant suit le déplacement
+  // réel (aucun deuxième marqueur créé).
+  useEffect(() => {
+    if (livePosition !== null) {
+      onLivePositionChange({ lat: livePosition.lat, lon: livePosition.lon });
+    }
+  }, [livePosition, onLivePositionChange]);
+
+  // Arrivée automatique : sous 30 m on affiche "Vous êtes arrivé(e) !" et on
+  // arrête le watch (pas de watch orphelin qui tournerait pour rien).
+  useEffect(() => {
+    if (isTracking && remainingMeters !== null && remainingMeters < 30) {
+      setHasArrived(true);
+      stopTracking();
+    }
+  }, [isTracking, remainingMeters, stopTracking]);
 
   function handleToggle() {
     if (expanded) {
+      // Replier le panneau itinéraire coupe aussi le suivi : sinon le watch
+      // tournerait sans aucun bouton visible pour l'arrêter.
+      stopTracking();
       setExpanded(false);
       return;
     }
@@ -148,6 +196,9 @@ function RouteToStopButton({
         to: { lat: stop.lat, lon: stop.lon },
         profile,
       });
+      // Nouvel itinéraire = nouveau trajet : l'alerte d'arrivée précédente ne
+      // s'applique plus.
+      setHasArrived(false);
       onGeometryChange(result.geometry);
     } catch {
       // L'erreur traduite est exposée via route.error, affichée ci-dessous.
@@ -156,8 +207,17 @@ function RouteToStopButton({
   }
 
   function handleClear() {
+    // Effacer l'itinéraire coupe aussi le suivi : pas de suivi orphelin sans
+    // tracé ni destination associée.
+    stopTracking();
+    setHasArrived(false);
     onGeometryChange(null);
     route.reset();
+  }
+
+  function handleStartTracking() {
+    setHasArrived(false);
+    startTracking();
   }
 
   return (
@@ -219,13 +279,77 @@ function RouteToStopButton({
             </p>
           )}
           {route.data && !route.isPending && (
-            <p className="home__route-result" role="status">
-              {formatRouteDistance(route.data.distanceMeters)} •{' '}
-              {formatRouteDuration(route.data.durationSeconds)}
-              <button type="button" className="home__route-clear" onClick={handleClear}>
-                Effacer l’itinéraire
-              </button>
-            </p>
+            <>
+              <p className="home__route-result" role="status">
+                {formatRouteDistance(route.data.distanceMeters)} •{' '}
+                {formatRouteDuration(route.data.durationSeconds)}
+                <button type="button" className="home__route-clear" onClick={handleClear}>
+                  Effacer l’itinéraire
+                </button>
+              </p>
+              {/* Suivi du passager (pas du véhicule) : visible uniquement quand
+                  un itinéraire est calculé — pas de suivi sans destination. */}
+              <div className="home__tracking">
+                {!isTracking && !trackingError && (
+                  <button
+                    type="button"
+                    className={`home__tracking-btn${hasArrived ? ' is-done' : ''}`}
+                    onClick={handleStartTracking}
+                    aria-pressed={false}
+                  >
+                    <NavigationIcon width={18} height={18} aria-hidden="true" />
+                    Suivre mon trajet
+                  </button>
+                )}
+                {isTracking && (
+                  <button
+                    type="button"
+                    className="home__tracking-btn is-active"
+                    onClick={stopTracking}
+                    aria-pressed={true}
+                  >
+                    <NavigationIcon width={18} height={18} aria-hidden="true" />
+                    Arrêter le suivi
+                  </button>
+                )}
+                {isTracking && remainingMeters === null && (
+                  <p className="home__tracking-info" role="status">
+                    <span className="spinner spinner--small" aria-hidden="true" />
+                    Localisation en cours…
+                  </p>
+                )}
+                {isTracking && remainingMeters !== null && (
+                  <p className="home__tracking-info" role="status">
+                    Distance restante : {formatRouteDistance(remainingMeters)}
+                  </p>
+                )}
+                {isTracking &&
+                  remainingMeters !== null &&
+                  remainingMeters < 150 &&
+                  remainingMeters >= 30 && (
+                    <p className="home__tracking-approaching" role="status">
+                      Vous approchez de votre destination !
+                    </p>
+                  )}
+                {hasArrived && (
+                  <p className="home__tracking-arrived" role="status">
+                    Vous êtes arrivé(e) !
+                  </p>
+                )}
+                {trackingError && (
+                  <p className="home__tracking-error" role="alert">
+                    {trackingError}
+                    <button
+                      type="button"
+                      className="home__retry-btn"
+                      onClick={handleStartTracking}
+                    >
+                      Réessayer
+                    </button>
+                  </p>
+                )}
+              </div>
+            </>
           )}
           {route.error && (
             <p className="home__route-error" role="alert">
@@ -450,9 +574,20 @@ export function HomePage() {
 
   // Un nouvel arrêt sélectionné (ou la fermeture du panneau) invalide le
   // tracé précédent — pas de tracé fantôme vers l'ancien arrêt.
+  // (RouteToStopButton est remonté via key={selectedStop.id} : le suivi GPS
+  // live est lui aussi démonté, et son cleanup appelle clearWatch — aucun
+  // watch orphelin au changement d'arrêt ou à la fermeture du panneau.)
   useEffect(() => {
     setRouteGeometry(null);
   }, [selectedStop?.id]);
+
+  // Position live remontée par RouteToStopButton pendant "Suivre mon trajet" :
+  // injectée dans la MÊME prop userLocation que la géolocalisation ponctuelle,
+  // donc le point bleu existant de StopsMap suit le déplacement réel (aucun
+  // deuxième marqueur). Le dernier point connu reste affiché à l'arrêt.
+  const handleLivePosition = useCallback((pos: GeoCenter) => {
+    setUserLocation(pos);
+  }, []);
 
   // Bannière de succès brève : auto-disparition ~2s après connexion OK.
   useEffect(() => {
@@ -540,6 +675,7 @@ export function HomePage() {
                 isLocating={isLocating}
                 onRequestLocation={requestLocation}
                 onGeometryChange={setRouteGeometry}
+                onLivePositionChange={handleLivePosition}
               />
               <ReportToStopButton key={`report-${selectedStop.id}`} stop={selectedStop} />
             </div>

@@ -849,6 +849,93 @@ button:disabled {
   padding: 0.5rem 0.75rem;
 }
 
+/* --- Suivi du trajet du passager (repère honnête, pas suivi de véhicule). - */
+/* En flux normal DANS .home__route-panel (colonne flex déjà en
+   flex-basis 100% sous la ligne de titre) : jamais de position absolute ici,
+   même pattern que les autres panneaux repliables du détail. */
+.home__tracking {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home__tracking-btn {
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 8px;
+  padding: 0.5rem 0.4rem;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.home__tracking-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.home__tracking-btn.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: #eef6f6;
+}
+
+.home__tracking-btn.is-done {
+  border-color: #2a9d8f;
+  color: #2a9d8f;
+}
+
+.home__tracking-info {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #555;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.home__tracking-approaching {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: #eef6f6;
+  border: 1px solid var(--color-primary);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.home__tracking-arrived {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1e7e34;
+  background: #e6f4ea;
+  border: 1px solid #a3d9b1;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.home__tracking-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ae2012;
+  background: #fdf0ee;
+  border: 1px solid #f3c4bd;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 /* --- Signalement d'un arrêt (bouton + formulaire repliable). ---------------- */
 /* Mêmes dimensions que les boutons favori/itinéraire (44px) : les trois
    tiennent dans la ligne de titre sans déborder sous .home__detail-close.
