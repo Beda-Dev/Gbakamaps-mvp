@@ -2,7 +2,7 @@
 
 > **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
 
-Dernière mise à jour : **2026-09-06 19:00**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+Dernière mise à jour : **2026-09-06 19:15**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
 
 **Règle adoptée pendant cette session (2026-09-06 17:05), à appliquer systématiquement** : avant d'adopter tout nouvel outil/service externe dans ce projet (librairie, API tierce, etc.), faire une recherche réelle (web + test empirique si possible) sur sa fiabilité/ses limites plutôt que de se fier à sa réputation ou sa documentation seule — c'est exactement ce qui a révélé qu'OSRM ne distinguait pas ses profils malgré ce qu'affirme sa propre doc (voir §4).
 
@@ -48,6 +48,7 @@ Dernière mise à jour : **2026-09-06 19:00**, par la session Claude Opus 5 qui 
 **Tests** :
 - Backend : **52 tests** d'intégration réels (vitest + vraie base PostgreSQL/PostGIS dockerisée, zéro mock de la DB)
 - Frontend : **47 tests** de composants/hooks (vitest + jsdom + testing-library, fetch mocké)
+- **End-to-end : 1 parcours critique complet** (`frontend/e2e/critical-path.spec.ts`, Playwright, canal msedge) tournant contre les **vrais services** (backend Docker, OpenRouteService, MapTiler, zéro mock) : inscription → carte → favori → itinéraire → signalement → déconnexion
 
 ### Fonctionnalités en cours / partiellement faites 🚧
 
@@ -55,7 +56,7 @@ Dernière mise à jour : **2026-09-06 19:00**, par la session Claude Opus 5 qui 
 
 ### Fonctionnalités restantes ❌ (au-delà du MVP core + différenciateur, voir §9 pour le détail priorisé)
 
-- Tests d'intégration end-to-end frontend↔backend automatisés (le câblage complet a été vérifié manuellement en navigateur réel piloté à chaque lot, mais rien de tout ça n'est dans la suite de tests committée)
+- ~~Tests end-to-end automatisés~~ ✅ fait (commit `90e5f15`) — reste 🟢 : accessibilité systématique, code-splitting, tarifs des lignes
 
 ### Explicitement HORS MVP (décision produit, pas oubli)
 
@@ -308,6 +309,13 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 **Fichiers concernés** : `frontend/src/index.css`.
 **Leçon** : un premier correctif basé sur le z-index a semblé résoudre le problème signalé (le lien redevenait cliquable) mais a déplacé le bug ailleurs sans le résoudre — revérifier par un test de bout en bout APRÈS un correctif de layout, pas seulement constater que le symptôme initial a disparu. Un problème de chevauchement spatial se corrige dans l'espace (positions/dimensions), pas par une course à l'empilement (z-index).
 
+### 2026-09-06 19:05 — Délégation OpenCode avortée silencieusement (permission refusée)
+
+**Symptôme** : une délégation (suite e2e) s'est terminée avec `exit code 0` (donc apparemment "réussie") sans avoir écrit le moindre fichier ni créé de liste de tâches — juste une phase d'exploration puis un arrêt net.
+**Cause** : l'agent a tenté de lire `frontend/.env` (pas nécessaire pour sa tâche, juste de la curiosité exploratoire), la politique de permission de l'environnement a auto-rejeté cette lecture, et l'agent s'est arrêté au lieu de continuer sans ce fichier.
+**Solution** : relance de la même tâche avec une instruction explicite en tête de spec ("ne lis aucun fichier `.env`, tu n'en as pas besoin, un refus de permission ne doit pas t'arrêter") — la relance a fonctionné du début à la fin.
+**Leçon, à appliquer à toute future délégation** : un `exit code 0` ne prouve PAS qu'un agent a fait le travail demandé — vérifier systématiquement qu'il a réellement produit les fichiers attendus (`git status --short`) avant de lire son rapport final en détail. Si une tâche implique des fichiers sensibles (`.env`, secrets), anticiper et interdire explicitement leur lecture dans la spec dès le départ plutôt que de découvrir le blocage après coup.
+
 ---
 
 ## 6. Historique des modifications (chronologique, par commit)
@@ -331,6 +339,7 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 18:2x | `0b30b51` | Écran signalements (formulaire inline + liste), délégué à OpenCode | 25/25 tests, vérification backend curl particulièrement complète par l'agent lui-même (4 cas), flux complet confirmé en navigateur, zéro bug de layout (3 boutons du panneau détail cohabitent) |
 | 2026-09-06 18:55 | `0c44855` | Écran de modération admin (`/admin/reports`), délégué à OpenCode | 35/35 tests, vérification indépendante complète (tsc/vitest/build + test navigateur réel Playwright couvrant anonyme/non-admin/admin avec un vrai compte promu ADMIN en SQL, création+approbation réelle d'un signalement via l'UI, mobile vérifié) — **zéro bug trouvé**, tous les écrans MVP haute priorité (§9) sont désormais terminés |
 | 2026-09-06 19:00 | `96b1f3a` | "Suivre mon trajet" (`useLiveTracking.ts` + intégration panneau itinéraire), délégué à OpenCode | 47/47 tests, vérification indépendante complète (tsc/vitest/build + **simulation GPS réelle en navigateur** via `context.setGeolocation()` sur 6 points interpolés vers un arrêt réel : distance décroissante affichée correctement, alerte d'approche puis d'arrivée au bon moment, arrêt automatique du suivi confirmé) — **zéro bug trouvé**, différenciateur §5bis terminé |
+| 2026-09-06 19:15 | `90e5f15` | Suite Playwright e2e committée (`frontend/e2e/critical-path.spec.ts`), délégué à OpenCode (1er essai avorté, retenté avec succès) | Parcours complet (inscription→carte→favori→itinéraire→signalement→déconnexion) contre les vrais services, zéro mock ; relancé indépendamment par mes soins (pas seulement le rapport de l'agent) → vert (~31s) ; comble la lacune "aucun test e2e committé" documentée depuis le début du projet |
 
 ---
 
@@ -384,8 +393,9 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 - Aucun bug connu non résolu au 2026-09-06 17:05.
 
 ### Risques techniques identifiés
-- **Bundle frontend à 1,3 Mo** (gzip ~365 Ko), dû à MapLibre. Pas encore de code-splitting. Acceptable pour le MVP, à surveiller si le bundle continue de grossir.
-- **Aucun test end-to-end front+back** — les tests frontend mockent `fetch`, les tests backend n'impliquent pas de vrai navigateur. Le câblage complet n'est vérifié que manuellement (Playwright ad hoc pendant le développement, pas dans la suite de tests committée).
+- **Bundle frontend à 1,35 Mo** (gzip ~370 Ko), dû à MapLibre. Pas encore de code-splitting. Acceptable pour le MVP, à surveiller si le bundle continue de grossir.
+- ~~Aucun test end-to-end front+back~~ **résolu** (commit `90e5f15`, 2026-09-06 19:15) — voir §2/§6. Limite restante : un seul parcours pour l'instant (pas la modération admin ni "Suivre mon trajet"), zéro CI (le suivi GPS n'est de toute façon pas simulable simplement dans ce parcours partagé).
+- **Dépendance réseau réelle du test e2e à OpenRouteService** — un flake transitoire (panne réseau ORS de quelques secondes) a été observé une fois pendant la construction du test, résolu de lui-même à la relance. `retries: 0` assumé tant qu'il n'y a pas de CI ; à reconsidérer si une CI est mise en place un jour (voir §9 🟢).
 - **Horaires GTFS obsolètes** (flux datant de fin 2021) — si une fonctionnalité d'horaires est envisagée un jour, ne pas se fier à ce flux, chercher une source à jour.
 
 ### Contraintes / configurations particulières
@@ -416,14 +426,14 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 ### 🟠 Priorité moyenne (UX/robustesse)
 - **Sécurité (audit `npm audit` fait le 2026-09-06 18:35)** : backend a 3 vulnérabilités "high" via `deepmerge-ts` (dépendance transitive de `@prisma/config`, utilisée par la CLI `prisma`, une devDependency). Risque réel jugé faible : ce code n'est jamais exécuté par `node dist/server.js` (le process qui tourne réellement), seulement si quelqu'un invoquait `npx prisma` avec une configuration malveillante — pas un vecteur d'attaque réseau. **Cause racine** : le `Dockerfile` fait `npm install` sans `--omit=dev` dans le build final, donc les devDependencies (dont `prisma` CLI) finissent dans l'image de production. Correctif simple rejeté pour l'instant : `npm audit fix --force` imposerait un downgrade Prisma cassant. Correctif propre (séparer un stage `prod-deps` avec `--omit=dev`) **reporté** car il casserait la commande pratique `docker compose exec backend npm run import:gtfs` (utilise `tsx`, une devDependency) sans plan de remplacement immédiat. Frontend : 0 vulnérabilité.
 - ~~"Suivre mon trajet"~~ ✅ fait (commit `96b1f3a`) — voir §5bis
-- Tests d'intégration end-to-end front+back (au moins un parcours critique testé avec un vrai navigateur, pas seulement fetch mocké)
+- ~~Tests d'intégration end-to-end front+back~~ ✅ fait (commit `90e5f15`) — 1 parcours critique complet contre les vrais services ; pourrait être étendu (modération admin, suivi GPS) mais couvre déjà le chemin utilisateur le plus courant
 - Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir
 - Affichage des tarifs (`TransportLine.fare`) — actuellement toujours `null` (le GTFS JungleBus ne les fournit pas) ; des données réelles existent publiquement (ex. budgetabidjan.com, trouvé pendant la recherche §5bis) — à évaluer comme source d'enrichissement manuel ou via signalements communautaires
 - Accessibilité : audit systématique (contrastes, navigation clavier, lecteurs d'écran) — pas encore fait au-delà des `aria-label`/`role` ajoutés au fil de l'eau
 
 ### 🟢 Priorité faible
 - WebSocket/realtime pour la modération (design esquissé en §4, non implémenté)
-- CI/CD (délibérément non prioritaire tant que le MVP n'est pas stabilisé)
+- CI/CD (délibérément non prioritaire tant que le MVP n'est pas stabilisé) — la suite e2e (§9 ci-dessus) est prête à y être branchée le jour venu (même prérequis `docker compose up -d` + `npm run dev`)
 - Réexaminer le choix ORS si un jour une instance auto-hébergée devient pertinente au volume du projet
 
 ### Explicitement écarté (limite honnête, pas un oubli — voir §5bis)
@@ -439,7 +449,7 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 Ordre exécuté : (1) écran itinéraire ✅, (2) écran signalements ✅, (3) écran modération admin ✅, (4) "Suivre mon trajet" ✅ (2026-09-06 19:00) — **le périmètre MVP haute priorité ET le différenciateur validé par la recherche produit sont tous les deux terminés**. Les deux derniers lots (modération admin, suivi GPS) n'ont révélé aucun bug, ce qui valide que les patterns établis (flex-wrap sans position:absolute, hooks dédiés par domaine, clearWatch systématique) préviennent désormais les classes de bugs déjà rencontrées deux fois chacune en début de projet (voir §5).
 
-**Prochaine étape à engager** : items 🟠/🟢 restants de §9 — dans l'ordre de valeur perçue : (a) tests d'intégration end-to-end automatisés (au moins un parcours critique, pas seulement du fetch mocké — combler la seule lacune de couverture répétée dans ce fichier), (b) accessibilité (audit systématique, pas seulement ad hoc), (c) code-splitting si le bundle continue de grossir (actuellement ~1,35 Mo), (d) tarifs des lignes (source externe à évaluer). Aucune de ces tâches n'est bloquante ni risquée — à enchaîner en mode autonome selon le même protocole (délégation ciblée si pertinent, vérification indépendante systématique, navigateur réel avant de déclarer terminé).
+Le test e2e critique (2026-09-06 19:15, commit `90e5f15`) clôt la dernière lacune de couverture répétée dans ce fichier. **Prochaine étape à engager** : items 🟠/🟢 restants de §9, dans l'ordre de valeur perçue : (a) accessibilité (audit systématique, pas seulement ad hoc), (b) code-splitting si le bundle continue de grossir (actuellement ~1,35 Mo), (c) tarifs des lignes (source externe à évaluer). Aucune de ces tâches n'est bloquante ni risquée — à enchaîner en mode autonome selon le même protocole (délégation ciblée si pertinent, vérification indépendante systématique — y compris re-vérifier qu'un agent délégué a bien produit des fichiers avant de lire son rapport, voir §5 — navigateur réel avant de déclarer terminé).
 
 ---
 
