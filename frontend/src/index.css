@@ -1,0 +1,145 @@
+:root {
+  --color-primary: #0a9396;
+  --color-bg: #fafafa;
+  --color-text: #14213d;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.home {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+.home__banner {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  text-align: center;
+  background: white;
+  border-bottom: 1px solid #eee;
+}
+
+.home__banner--ok {
+  color: #2a9d8f;
+}
+
+.home__banner--error {
+  color: #ae2012;
+}
+
+.home__map {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.home__status {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 10;
+  background: white;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.home__status--error {
+  color: #ae2012;
+}
+
+.home__count {
+  text-align: center;
+  padding: 0.5rem;
+  margin: 0;
+  font-size: 0.8rem;
+  color: #555;
+  background: white;
+  border-top: 1px solid #eee;
+}
+
+.home__detail {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  padding: 1rem 1.25rem;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+  z-index: 20;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.home__detail-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.75rem;
+  border: none;
+  background: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.home__lines {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.home__lines li {
+  border-left: 4px solid;
+  padding-left: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.map-style-switcher {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 10;
+  display: flex;
+  gap: 0.25rem;
+  background: white;
+  padding: 0.25rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.map-style-switcher button {
+  border: none;
+  background: transparent;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: #333;
+}
+
+.map-style-switcher button.is-active {
+  background: var(--color-primary);
+  color: white;
+}

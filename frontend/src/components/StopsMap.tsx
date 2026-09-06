@@ -1,0 +1,149 @@
+// =============================================================================
+// Carte MapLibre. Styles vectoriels MapTiler (rendu net à toute résolution,
+// zoom fluide, bâtiments visibles) — nécessite une clé API gratuite
+// (VITE_MAPTILER_KEY, voir .env.example et README). Ni Google Maps ni sa
+// clé jamais configurée comme dans l'ancien projet.
+//
+// Si la clé n'est pas encore renseignée, repli automatique sur des tuiles
+// OpenStreetMap brutes (moins nettes, mais garde l'app utilisable pendant
+// la configuration) — jamais un écran cassé faute de clé.
+// =============================================================================
+import { useEffect, useRef, useState } from 'react';
+import { Map, Marker, NavigationControl, Popup, type StyleSpecification } from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import type { Stop } from '@/lib/api/types';
+
+const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
+
+// Styles MapTiler réels (vérifiés) — l'utilisateur peut basculer entre eux.
+// Slugs confirmés : https://api.maptiler.com/maps/<slug>/style.json
+const MAP_STYLES = [
+  { id: 'streets-v2', label: 'Rues' },
+  { id: 'basic-v2', label: 'Basique' },
+  { id: 'outdoor-v2', label: 'Plein air' },
+  { id: 'satellite', label: 'Satellite' },
+  { id: 'hybrid', label: 'Hybride' },
+] as const;
+
+type MapStyleId = (typeof MAP_STYLES)[number]['id'];
+const DEFAULT_STYLE: MapStyleId = 'streets-v2';
+
+const OSM_FALLBACK_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors',
+    },
+  },
+  layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+};
+
+function resolveMapStyle(styleId: MapStyleId): string | StyleSpecification {
+  if (!MAPTILER_KEY) {
+    return OSM_FALLBACK_STYLE;
+  }
+  return `https://api.maptiler.com/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
+}
+
+const STOP_TYPE_COLORS: Record<string, string> = {
+  GBAKA_STOP: '#EE9B00',
+  WORO_WORO_STOP: '#CA6702',
+  TAXI_STAND: '#9B2226',
+  MOTO_TAXI_STAND: '#AE2012',
+  BUS_STOP: '#0A9396',
+  PLATFORM: '#005F73',
+  STATION: '#005F73',
+};
+
+interface StopsMapProps {
+  center: { lat: number; lon: number };
+  stops: Stop[];
+  onSelectStop?: (stop: Stop) => void;
+}
+
+export function StopsMap({ center, stops, onSelectStop }: StopsMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<Map | null>(null);
+  const markersRef = useRef<Marker[]>([]);
+  const [styleId, setStyleId] = useState<MapStyleId>(DEFAULT_STYLE);
+  const [mapReady, setMapReady] = useState(false);
+
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const map = new Map({
+      container: containerRef.current,
+      style: resolveMapStyle(DEFAULT_STYLE),
+      center: [center.lon, center.lat],
+      zoom: 15,
+    });
+    map.addControl(new NavigationControl(), 'top-right');
+    map.once('load', () => setMapReady(true));
+    mapRef.current = map;
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- la carte ne doit s'initialiser qu'une fois
+  }, []);
+
+  useEffect(() => {
+    mapRef.current?.setCenter([center.lon, center.lat]);
+  }, [center.lat, center.lon]);
+
+  // Bascule de style : les Markers sont des éléments DOM indépendants des
+  // couches du style, ils survivent à setStyle() sans avoir à être recréés.
+  function handleStyleChange(id: MapStyleId) {
+    if (!mapRef.current || id === styleId) return;
+    setStyleId(id);
+    mapRef.current.setStyle(resolveMapStyle(id));
+  }
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    markersRef.current.forEach((m) => m.remove());
+    markersRef.current = stops.map((stop) => {
+      const color = STOP_TYPE_COLORS[stop.stopType] ?? '#0A9396';
+      const marker = new Marker({ color })
+        .setLngLat([stop.lon, stop.lat])
+        .setPopup(new Popup({ offset: 12 }).setText(stop.name ?? 'Arrêt sans nom'))
+        .addTo(map);
+
+      if (onSelectStop) {
+        marker.getElement().addEventListener('click', () => onSelectStop(stop));
+      }
+      return marker;
+    });
+
+    return () => {
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current = [];
+    };
+  }, [stops, onSelectStop, mapReady]);
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {MAPTILER_KEY && (
+        <div className="map-style-switcher">
+          {MAP_STYLES.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={s.id === styleId ? 'is-active' : ''}
+              onClick={() => handleStyleChange(s.id)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
