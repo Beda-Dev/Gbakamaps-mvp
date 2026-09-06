@@ -139,6 +139,11 @@ button:disabled {
   font-size: 1rem;
 }
 
+/* Rotation pour l'icône LoaderIcon (SVG), réutilise @keyframes spin. */
+.icon-spin {
+  animation: spin 0.8s linear infinite;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

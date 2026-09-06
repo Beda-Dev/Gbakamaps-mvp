@@ -8,7 +8,7 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 
-import { env } from './config/env.js';
+import { env, isAllowedOrigin } from './config/env.js';
 import { globalErrorHandler, ForbiddenError } from './common/errors.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
@@ -35,7 +35,9 @@ export async function buildApp() {
   app.setErrorHandler(globalErrorHandler);
 
   await app.register(cors, {
-    origin: env.FRONTEND_ORIGIN,
+    origin: (origin, callback) => {
+      callback(null, isAllowedOrigin(origin));
+    },
     credentials: true,
   });
 
@@ -56,7 +58,7 @@ export async function buildApp() {
     const hasSessionCookie = Boolean(request.cookies[env.SESSION_COOKIE_NAME]);
     if (MUTATING_METHODS.has(request.method) && hasSessionCookie) {
       const origin = request.headers.origin;
-      if (origin && origin !== env.FRONTEND_ORIGIN) {
+      if (origin && !isAllowedOrigin(origin)) {
         throw new ForbiddenError('Invalid request origin');
       }
     }

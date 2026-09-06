@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useHealth } from '@/hooks/useHealth';
 import { useNearbyStops } from '@/hooks/useNearbyStops';
 import { StopsMap } from '@/components/StopsMap';
+import { XIcon } from '@/components/icons';
 import type { Stop } from '@/lib/api/types';
 
 // Plateau, Abidjan — point de départ par défaut avant géolocalisation.
@@ -116,7 +117,7 @@ export function HomePage() {
               onClick={() => setSelectedStop(null)}
               aria-label="Fermer le détail de l'arrêt"
             >
-              ✕
+              <XIcon width={18} height={18} aria-hidden="true" />
             </button>
             <h2>{selectedStop.name ?? 'Arrêt sans nom'}</h2>
             <p>{selectedStop.stopType}</p>

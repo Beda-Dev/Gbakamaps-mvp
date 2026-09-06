@@ -14,7 +14,10 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(16, 'SESSION_SECRET doit faire au moins 16 caractères'),
   SESSION_COOKIE_NAME: z.string().default('gbakamap_session'),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(720),
-  FRONTEND_ORIGIN: z.string().url().default('http://localhost:5173'),
+  // Accepte une seule origine ("http://localhost:5173"), une liste séparée
+  // par des virgules (dev local + tunnel), ou "*" pour tout autoriser
+  // (jamais en production — cf. isAllowedOrigin).
+  FRONTEND_ORIGIN: z.string().min(1).default('http://localhost:5173'),
   OSRM_URL: z.string().url().default('https://router.project-osrm.org'),
 });
 
@@ -27,3 +30,21 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+const allowedOrigins = env.FRONTEND_ORIGIN.split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+if (env.NODE_ENV === 'production' && allowedOrigins.includes('*')) {
+  console.error('❌ FRONTEND_ORIGIN="*" est interdit en production (CORS + cookies de session).');
+  process.exit(1);
+}
+
+// Utilisé par le plugin CORS (voir app.ts) pour valider l'origine d'une
+// requête entrante à l'exécution, puisque FRONTEND_ORIGIN peut désormais
+// contenir plusieurs valeurs (dev local + tunnel de test) ou "*".
+export function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true; // requêtes sans en-tête Origin (ex: curl, mobile natif)
+  if (allowedOrigins.includes('*')) return true;
+  return allowedOrigins.includes(origin);
+}

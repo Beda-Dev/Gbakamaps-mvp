@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Map, Marker, NavigationControl, Popup, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Stop } from '@/lib/api/types';
+import { LoaderIcon, LocateFixedIcon } from '@/components/icons';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
 
@@ -202,9 +203,9 @@ export function StopsMap({
           title="Recentrer sur ma position"
         >
           {isLocating ? (
-            <span className="spinner spinner--small" aria-hidden="true" />
+            <LoaderIcon className="icon-spin" width={20} height={20} aria-hidden="true" />
           ) : (
-            <span aria-hidden="true">◎</span>
+            <LocateFixedIcon width={20} height={20} aria-hidden="true" />
           )}
         </button>
       )}
