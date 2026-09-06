@@ -7,6 +7,22 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+// Docker Compose transmet une variable listée dans `environment:` même
+// quand elle n'est définie nulle part dans le `.env` — comme une CHAÎNE VIDE
+// ("The ... variable is not set. Defaulting to a blank string."), pas comme
+// une variable absente. Un `.optional()` seul ne suffit donc pas pour ces
+// clés facultatives passées explicitement via docker-compose.yml : `""` est
+// une valeur présente qui échouerait un `.min(1)`. Bug réellement rencontré
+// le 2026-09-06 (conteneur backend en crash-loop après l'ajout de
+// GRAPHHOPPER_API_KEY à `environment:` sans valeur dans `.env`) — cette
+// fonction normalise `""` en `undefined` avant validation.
+function optionalNonEmpty() {
+  return z.preprocess(
+    (val) => (val === '' ? undefined : val),
+    z.string().min(1).optional()
+  );
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -25,6 +41,22 @@ const envSchema = z.object({
   // MapTiler côté frontend.
   ORS_API_KEY: z.string().min(1, 'ORS_API_KEY est requis (compte gratuit sur openrouteservice.org)'),
   ORS_BASE_URL: z.string().url().default('https://api.openrouteservice.org'),
+  // Clé de secours : ORS applique un quota par clé (jour) ET une limite de
+  // débit (minute) — constaté en pratique le 2026-09-06 pendant des tests
+  // automatisés répétés (des appels curl isolés réussissaient juste après un
+  // 503 sur la même route, signe d'une limite par minute plutôt qu'un vrai
+  // incident). Une seconde clé (même compte ou un second compte gratuit)
+  // absorbe ce cas sans jamais bloquer l'utilisateur. Optionnelle : le
+  // système fonctionne avec une seule clé, juste avec moins de marge.
+  ORS_API_KEY_2: optionalNonEmpty(),
+  // Dernier recours si les deux clés ORS échouent : GraphHopper (compte
+  // gratuit sur graphhopper.com, distingue réellement les profils
+  // voiture/vélo/marche — contrairement à OSRM démo, écarté pour cette
+  // raison, voir routing.service.ts). Optionnel : si absent, le système
+  // renvoie une erreur claire plutôt que de silencieusement dégrader vers un
+  // fournisseur non vérifié.
+  GRAPHHOPPER_API_KEY: optionalNonEmpty(),
+  GRAPHHOPPER_BASE_URL: z.string().url().default('https://graphhopper.com/api/1'),
 });
 
 const parsed = envSchema.safeParse(process.env);

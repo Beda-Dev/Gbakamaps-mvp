@@ -112,12 +112,91 @@ describe('routing module — gestion des pannes (fetch mocké, déterministe)', 
     vi.unstubAllGlobals();
   });
 
-  it('service ORS injoignable → 503 ROUTING_SERVICE_ERROR', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+  it('service ORS injoignable → 503 ROUTING_SERVICE_ERROR (les deux clés tentées)', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
 
     await expect(
       computeRoute({ lat: 5.32, lon: -4.02 }, { lat: 5.34, lon: -3.99 }, 'driving-car', false)
     ).rejects.toMatchObject({ statusCode: 503, code: 'ROUTING_SERVICE_ERROR' });
+    // backend/.env de ce projet configure ORS_API_KEY_2 : la chaîne de repli
+    // doit avoir tenté les deux clés avant d'abandonner, pas une seule.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('la clé ORS 1 échoue, la clé 2 (configurée) prend le relais sans erreur exposée', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('clé 1 en panne'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: [[-4.02, 5.32], [-3.99, 5.34]] },
+              properties: { summary: { distance: 1000, duration: 600 } },
+            },
+          ],
+        }),
+      } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await computeRoute(
+      { lat: 5.32, lon: -4.02 },
+      { lat: 5.34, lon: -3.99 },
+      'driving-car',
+      false
+    );
+    expect(result.routes[0]).toMatchObject({ distanceMeters: 1000, durationSeconds: 600 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('les deux clés ORS échouent puis GraphHopper (configuré) prend le relais', async () => {
+    // GRAPHHOPPER_API_KEY n'est pas dans backend/.env de ce projet : on
+    // isole ce test avec un module env mocké plutôt que de dépendre d'une
+    // vraie clé GraphHopper (facultative, non fournie par l'utilisateur).
+    vi.resetModules();
+    vi.doMock('../src/config/env.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../src/config/env.js')>();
+      return { ...actual, env: { ...actual.env, GRAPHHOPPER_API_KEY: 'test-graphhopper-key' } };
+    });
+    const { computeRoute: computeRouteWithGraphHopper } = await import(
+      '../src/modules/routing/routing.service.js'
+    );
+
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('clé ORS 1 en panne'))
+      .mockRejectedValueOnce(new Error('clé ORS 2 en panne'))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          paths: [
+            {
+              distance: 500,
+              time: 360_000, // ms — doit être converti en secondes
+              points: { type: 'LineString', coordinates: [[-4.02, 5.32], [-3.99, 5.34]] },
+            },
+          ],
+        }),
+      } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await computeRouteWithGraphHopper(
+      { lat: 5.32, lon: -4.02 },
+      { lat: 5.34, lon: -3.99 },
+      'driving-car',
+      false
+    );
+    expect(result.routes[0]).toMatchObject({ distanceMeters: 500, durationSeconds: 360 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    vi.doUnmock('../src/config/env.js');
+    vi.resetModules();
   });
 
   it('ORS répond une erreur "pas d\'itinéraire" (code 2010) → 422 NO_ROUTE (pas 500)', async () => {
