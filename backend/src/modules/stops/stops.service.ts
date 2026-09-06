@@ -9,6 +9,7 @@
 import { Prisma } from '../../generated/prisma/index.js';
 import { prisma } from '../../db/prisma.js';
 import { NotFoundError } from '../../common/errors.js';
+import { serializeStopBigInt } from '../../common/serialize.js';
 
 const STOP_LINE_INCLUDE = {
   stopLines: {
@@ -29,17 +30,11 @@ const STOP_LINE_INCLUDE = {
 
 type StopWithLines = { osmId: bigint | null; stopLines: { line: unknown }[] } & Record<string, unknown>;
 
-// Aplatit la table de jonction "stopLines" en un simple tableau "lines", et
-// convertit "osmId" (BigInt) en string — Fastify (comme JSON.stringify natif)
-// ne sait pas sérialiser un BigInt, ce qui provoquerait un 500 sur tout
-// arrêt importé depuis OSM/GTFS.
+// Aplatit la table de jonction "stopLines" en un simple tableau "lines".
 function toApiStop<T extends StopWithLines>(stop: T) {
-  const { stopLines, osmId, ...rest } = stop;
-  return {
-    ...rest,
-    osmId: osmId === null ? null : osmId.toString(),
-    lines: stopLines.map((sl) => sl.line),
-  };
+  const { stopLines } = stop;
+  const { stopLines: _omit, ...rest } = serializeStopBigInt(stop);
+  return { ...rest, lines: stopLines.map((sl) => sl.line) };
 }
 
 export interface FindNearbyParams {
