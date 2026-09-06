@@ -1,0 +1,146 @@
+# GbakaMap MVP
+
+Reconstruction du projet GbakaMap (localisation des transports informels — bus, gbaka, woro-woro — en Côte d'Ivoire), sur une base plus simple, plus sûre et entièrement auto-hébergée. Ce dépôt remplace l'ancien backend Next.js/Firebase/Neon — voir [§ Pourquoi cette reconstruction](#pourquoi-cette-reconstruction).
+
+## État actuel
+
+| Composant | État |
+|---|---|
+| Backend (Fastify + Prisma + PostgreSQL/PostGIS) | ✅ Fonctionnel — 5 modules, 50 tests réels |
+| Frontend (PWA) | 🚧 Pas encore commencé |
+| Déploiement / CI | 🚧 Pas encore mis en place (volontairement, cf. principe MVP) |
+
+## Stack
+
+- **Backend** : Node.js + [Fastify](https://fastify.dev) + [Prisma](https://www.prisma.io) + TypeScript
+- **Base de données** : PostgreSQL 16 + [PostGIS](https://postgis.net) (recherche géospatiale indexée), auto-hébergée via Docker
+- **Authentification** : gérée nous-mêmes — sessions opaques en base (pas de JWT côté client), mots de passe hashés en argon2id. Pas de Firebase.
+- **Frontend** (à venir) : Vite + React + TypeScript, PWA
+- **Données transport** : import batch depuis le flux GTFS [JungleBus — Grand Abidjan](backend/data/gtfs-abidjan/README.md) (3 820 arrêts réels, 391 lignes bus/gbaka/woro-woro)
+
+## Prérequis
+
+- Node.js 20+ et npm
+- Docker + Docker Compose
+
+## Démarrage rapide
+
+```bash
+# 1. Cloner et se placer à la racine du monorepo
+cp .env.example .env
+# éditer .env si besoin (les valeurs par défaut fonctionnent en local)
+
+# 2. Démarrer la base de données (PostgreSQL + PostGIS)
+docker compose up -d db
+
+# 3. Installer les dépendances du backend
+cd backend
+npm install
+cp ../.env.example .env
+# éditer backend/.env : remplacer "db:5432" par "localhost:5433" dans
+# DATABASE_URL (voir l'encart ci-dessous — deux .env différents, deux
+# usages différents)
+
+# 4. Appliquer les migrations
+npx prisma migrate deploy
+
+# 5. (Optionnel mais recommandé) Importer les données réelles GTFS Abidjan
+npm run import:gtfs
+
+# 6. Lancer le backend en développement
+npm run dev
+# → http://localhost:4000/api/health doit répondre {"success":true,...}
+```
+
+### ⚠️ Pourquoi deux fichiers `.env` ?
+
+- **`.env` à la racine** alimente `docker-compose.yml`. `DATABASE_URL` y utilise le nom d'hôte interne au réseau Docker (`db`), car c'est le backend **conteneurisé** qui s'en sert.
+- **`backend/.env`** alimente le process Node quand tu le lances directement sur ta machine (`npm run dev`, `npm test`, scripts Prisma) — il doit utiliser `localhost` + le **port exposé** (`5433` par défaut, pas `5432` — un PostgreSQL local préexistant sur ta machine peut déjà occuper 5432, cf. `.env.example`).
+
+Les deux fichiers sont gitignorés. Ne jamais y mettre de vraies valeurs de production.
+
+## Lancer le backend entièrement en Docker (comme en production)
+
+```bash
+docker compose up -d --build
+curl http://localhost:4000/api/health
+```
+
+`docker compose down` arrête les conteneurs **sans perdre les données** (volume nommé `gbakamap_db_data`). Pour tout réinitialiser : `docker compose down -v`.
+
+## Tests
+
+```bash
+cd backend
+docker compose -f ../docker-compose.yml up -d db   # si pas déjà démarré
+npx vitest run
+```
+
+Tous les tests tournent contre une **vraie base PostgreSQL/PostGIS** (aucun mock de la base). Les seuls mocks du projet concernent un service tiers (OSRM) pour simuler des pannes réseau de façon déterministe — voir `backend/tests/routing.test.ts`.
+
+**État actuel : 50 tests, tous verts.**
+
+## Architecture
+
+```
+PWA (Vite + React + TS)         [à venir]
+        │  HTTP / JSON (cookies httpOnly)
+        ▼
+Backend Fastify (Node.js)
+  ├── modules/auth       — signup, login, logout, session
+  ├── modules/stops      — recherche géospatiale (PostGIS), détail arrêt
+  ├── modules/favorites  — favoris utilisateur
+  ├── modules/reports    — signalements communautaires + modération admin
+  └── modules/routing    — proxy OSRM (calcul d'itinéraire)
+        │  Prisma
+        ▼
+PostgreSQL 16 + PostGIS (Docker, volume persistant)
+
+Hors chemin de requête (batch, pas d'appel synchrone) :
+  src/scripts/import-gtfs.ts — import ponctuel des données GTFS
+```
+
+Chaque module suit la même convention : `*.schemas.ts` (validation Zod), `*.service.ts` (logique métier, jamais dans les routes), `*.routes.ts` (HTTP pur). Voir `backend/src/modules/auth/` comme référence.
+
+## Endpoints
+
+| Méthode | Route | Auth requise | Description |
+|---|---|---|---|
+| GET | `/api/health` | — | Vérifie la connexion à la base |
+| POST | `/api/auth/signup` | — | Créer un compte |
+| POST | `/api/auth/login` | — | Se connecter (rate-limité) |
+| POST | `/api/auth/logout` | session | Se déconnecter (révoque la session) |
+| GET | `/api/auth/me` | session | Utilisateur courant |
+| GET | `/api/stops/nearby` | — | Arrêts à proximité (`lat`, `lon`, `radius`, `type`) |
+| GET | `/api/stops/:id` | — | Détail d'un arrêt |
+| POST | `/api/favorites` | session | Ajouter un favori |
+| GET | `/api/favorites` | session | Lister ses favoris |
+| DELETE | `/api/favorites/:stopId` | session | Retirer un favori |
+| POST | `/api/reports` | session | Créer un signalement |
+| GET | `/api/reports/mine` | session | Lister ses propres signalements |
+| GET | `/api/admin/reports` | session + rôle ADMIN | Lister tous les signalements (filtrable par `status`) |
+| PATCH | `/api/admin/reports/:id` | session + rôle ADMIN | Modérer un signalement |
+| GET | `/api/route` | — | Calculer un itinéraire (`from`, `to` en `lat,lon`) |
+
+Toutes les réponses suivent le format `{ success: boolean, data?, error?, code? }`.
+
+## Décisions d'architecture (résumé)
+
+Le détail complet (alternatives considérées, justifications) a été discuté en amont de ce projet. En bref :
+
+- **Sessions opaques en base plutôt que JWT** : révocation immédiate possible (nécessaire pour la modération), pas de gestion de refresh token côté client.
+- **Fastify plutôt que NestJS** : structure suffisante pour un MVP sans le poids d'un framework à decorators/DI.
+- **PostgreSQL + PostGIS plutôt que bounding-box + calcul JS** : recherche de proximité indexée (`ST_DWithin` + index GiST), pas de scan complet même à grande échelle.
+- **Import GTFS batch plutôt qu'appels Overpass en direct** : voir [backend/data/gtfs-abidjan/README.md](backend/data/gtfs-abidjan/README.md) — les tags OSM spécifiques au transport informel ivoirien (`gbaka=yes`, etc.) se sont révélés quasiment vides en interrogation directe ; le flux GTFS JungleBus fournit une topologie réelle et déjà structurée par opérateur.
+- **Pas de Redis/queue/microservices** : volume et besoins du MVP ne le justifient pas.
+
+## Pourquoi cette reconstruction
+
+L'ancien projet (Next.js + Firebase + Neon + Overpass en direct) a fait l'objet d'un audit qui a trouvé, entre autres : des endpoints d'administration accessibles sans authentification, une application mobile qui ne compilait pas, et des données cartographiques à 99 % inexploitables (arrêts sans nom, faux positifs sur les tags OSM). Cette reconstruction reprend ce qui fonctionnait (le modèle de données Prisma était solide) et corrige le reste avec un périmètre volontairement réduit à un MVP.
+
+## Limites connues du MVP (volontaires)
+
+- Un seul mode de transport pour le calcul d'itinéraire (`driving`) — le serveur OSRM public utilisé ne route en réalité que sur le graphe voiture, quel que soit le profil demandé (vérifié empiriquement). Exposer un choix de mode aurait été trompeur.
+- Pas de météo, pas de mode hors-ligne, pas d'historique de recherche, pas de comparaison multi-modes — reportés en V2/V3.
+- Les données GTFS importées datent de fin 2021 (horaires obsolètes) ; seule la topologie (arrêts, lignes, dessertes) est utilisée, jamais les horaires.
+- Pas de CI/CD pour l'instant — choix assumé tant que le MVP n'est pas stabilisé.
