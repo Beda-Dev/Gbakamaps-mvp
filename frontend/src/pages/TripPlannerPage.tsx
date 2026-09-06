@@ -9,10 +9,11 @@
 // les horaires GTFS 2021 ou une approximation, coût vérifié par un admin ou
 // indicatif) — jamais présentée comme une donnée exacte garantie.
 // =============================================================================
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStopSearch } from '@/hooks/useStopSearch';
 import { usePlaceSearch } from '@/hooks/usePlaceSearch';
+import { StopsMap, type TripSegment } from '@/components/StopsMap';
 import {
   formatTripCost,
   formatTripDistance,
@@ -25,6 +26,7 @@ import {
 import {
   BusIcon,
   CarTaxiFrontIcon,
+  CrosshairIcon,
   FootprintsIcon,
   LoaderIcon,
   LocateFixedIcon,
@@ -33,6 +35,43 @@ import {
   XIcon,
 } from '@/components/icons';
 import type { Stop, TransportType } from '@/lib/api/types';
+
+// Centre par défaut de la carte du planificateur — même valeur que la carte
+// principale (HomePage.tsx), avant toute sélection d'origine/destination.
+const DEFAULT_MAP_CENTER = { lat: 5.32, lon: -4.02 };
+
+// Reconstruit les segments à afficher sur la carte pour un plan donné, à
+// partir des coordonnées réelles d'origine/destination et des arrêts de
+// montée/descente de chaque étape "ride". AUCUNE géométrie de voirie n'existe
+// pour ces segments (shapes.txt absent des données GTFS importées, cf.
+// PROJECT_MEMORY.md) — ce sont des lignes droites entre points réels,
+// jamais un tracé de rue exact (voir avertissement affiché sous la carte).
+function buildTripSegments(plan: TripPlan, origin: TripCoordinates, destination: TripCoordinates): TripSegment[] {
+  const segments: TripSegment[] = [];
+  let cursor: TripCoordinates = origin;
+  plan.steps.forEach((step, i) => {
+    if (step.type === 'ride' && step.boardStop && step.alightStop) {
+      segments.push({
+        kind: 'ride',
+        coordinates: [
+          [step.boardStop.lon, step.boardStop.lat],
+          [step.alightStop.lon, step.alightStop.lat],
+        ],
+        color: step.line?.color ?? '#0A9396',
+      });
+      cursor = step.alightStop;
+      return;
+    }
+    // Étape de marche : son point d'arrivée est l'arrêt de montée de la
+    // prochaine étape "ride" (transfert ou premier embarquement), sinon la
+    // destination finale (dernière étape du plan).
+    const nextRide = plan.steps.slice(i + 1).find((s) => s.type === 'ride');
+    const next: TripCoordinates = nextRide?.boardStop ?? destination;
+    segments.push({ kind: 'walk', coordinates: [[cursor.lon, cursor.lat], [next.lon, next.lat]] });
+    cursor = next;
+  });
+  return segments;
+}
 
 // Icône par mode réel de la ligne empruntée — TAXI/MOTO_TAXI n'apparaissent
 // jamais comme type de ligne dans les données importées (ce sont des
@@ -74,12 +113,16 @@ function PlaceField({
   value,
   onChange,
   near,
+  onPickOnMap,
+  isPicking,
 }: {
   id: string;
   label: string;
   value: Place | null;
   onChange: (place: Place | null) => void;
   near?: TripCoordinates | null;
+  onPickOnMap?: () => void;
+  isPicking?: boolean;
 }) {
   const stopSearch = useStopSearch(near);
   const placeSearch = usePlaceSearch();
@@ -163,7 +206,23 @@ function PlaceField({
             <XIcon width={14} height={14} aria-hidden="true" />
           </button>
         )}
+        {!value && onPickOnMap && (
+          <button
+            type="button"
+            className={`trip-field__pick-btn${isPicking ? ' is-active' : ''}`}
+            onClick={onPickOnMap}
+            title="Choisir ce point sur la carte"
+            aria-pressed={isPicking}
+          >
+            <CrosshairIcon width={16} height={16} aria-hidden="true" />
+          </button>
+        )}
       </div>
+      {isPicking && (
+        <p className="trip-field__hint" role="status">
+          Cliquez sur la carte pour placer ce point.
+        </p>
+      )}
       {showDropdown && (
         <ul className="trip-field__results" id={listboxId} role="listbox">
           {stopSearch.isError && placeSearch.isError && (
@@ -215,15 +274,23 @@ function PlaceField({
   );
 }
 
-function TripPlanCard({ plan, rank }: { plan: TripPlan; rank: number }) {
-  const [expanded, setExpanded] = useState(rank === 0);
-
+function TripPlanCard({
+  plan,
+  rank,
+  expanded,
+  onToggle,
+}: {
+  plan: TripPlan;
+  rank: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   return (
     <li className={`trip-plan-card${rank === 0 ? ' is-recommended' : ''}`}>
       <button
         type="button"
         className="trip-plan-card__summary"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onToggle}
         aria-expanded={expanded}
       >
         <div className="trip-plan-card__headline">
@@ -294,7 +361,30 @@ export function TripPlannerPage() {
   const [optimize, setOptimize] = useState<OptimizeCriterion>('fastest');
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  // Champ qui attend une sélection par clic sur la carte — null = aucun
+  // (comportement normal de la carte, on ne capte pas les clics sans raison).
+  const [pickingField, setPickingField] = useState<'origin' | 'destination' | null>(null);
+  // Index du plan actuellement déplié — c'est celui-là qui est dessiné sur la
+  // carte (un seul à la fois : superposer tous les plans rendrait la carte
+  // illisible et laisserait croire que ce sont tous des trajets équivalents).
+  const [expandedIndex, setExpandedIndex] = useState(0);
   const trip = useTripPlan();
+
+  function handleMapClick(point: TripCoordinates) {
+    if (!pickingField) return;
+    const place: Place = { label: 'Point choisi sur la carte', coords: point };
+    if (pickingField === 'origin') setOrigin(place);
+    else setDestination(place);
+    setPickingField(null);
+  }
+
+  const mapCenter = origin?.coords ?? destination?.coords ?? DEFAULT_MAP_CENTER;
+
+  const selectedPlan = trip.data?.plans[expandedIndex] ?? null;
+  const tripSegments = useMemo(() => {
+    if (!selectedPlan || !origin || !destination) return null;
+    return buildTripSegments(selectedPlan, origin.coords, destination.coords);
+  }, [selectedPlan, origin, destination]);
 
   function useMyLocation() {
     if (!('geolocation' in navigator)) {
@@ -322,6 +412,7 @@ export function TripPlannerPage() {
   async function handleCompare(event: React.FormEvent) {
     event.preventDefault();
     if (!origin || !destination) return;
+    setExpandedIndex(0);
     try {
       await trip.plan({
         from: origin.coords,
@@ -339,6 +430,7 @@ export function TripPlannerPage() {
 
   return (
     <main className="trip-planner">
+      <div className="trip-planner__layout">
       <div className="trip-planner__card">
         <div className="trip-planner__header">
           <h1>Planifier un trajet</h1>
@@ -349,7 +441,15 @@ export function TripPlannerPage() {
 
         <form className="trip-planner__form" onSubmit={(e) => void handleCompare(e)}>
           <div className="trip-field-row">
-            <PlaceField id="trip-origin" label="Départ" value={origin} onChange={setOrigin} near={destination?.coords} />
+            <PlaceField
+              id="trip-origin"
+              label="Départ"
+              value={origin}
+              onChange={setOrigin}
+              near={destination?.coords}
+              onPickOnMap={() => setPickingField((f) => (f === 'origin' ? null : 'origin'))}
+              isPicking={pickingField === 'origin'}
+            />
             <button
               type="button"
               className="trip-planner__locate-btn"
@@ -371,7 +471,15 @@ export function TripPlannerPage() {
             </p>
           )}
 
-          <PlaceField id="trip-destination" label="Destination" value={destination} onChange={setDestination} near={origin?.coords} />
+          <PlaceField
+            id="trip-destination"
+            label="Destination"
+            value={destination}
+            onChange={setDestination}
+            near={origin?.coords}
+            onPickOnMap={() => setPickingField((f) => (f === 'destination' ? null : 'destination'))}
+            isPicking={pickingField === 'destination'}
+          />
 
           <div className="trip-planner__filters">
             <label className="trip-planner__filter-label" htmlFor="trip-radius">
@@ -434,12 +542,39 @@ export function TripPlannerPage() {
             ) : (
               <ul className="trip-plan-list">
                 {trip.data.plans.map((plan, i) => (
-                  <TripPlanCard key={i} plan={plan} rank={i} />
+                  <TripPlanCard
+                    key={i}
+                    plan={plan}
+                    rank={i}
+                    expanded={expandedIndex === i}
+                    onToggle={() => setExpandedIndex((cur) => (cur === i ? -1 : i))}
+                  />
                 ))}
               </ul>
             )}
           </div>
         )}
+      </div>
+
+      <div className="trip-planner__map-panel">
+        <div className="trip-planner__map">
+          <StopsMap
+            center={mapCenter}
+            stops={[]}
+            onMapClick={handleMapClick}
+            pickerActive={pickingField !== null}
+            originMarker={origin ? { ...origin.coords, label: origin.label } : null}
+            destinationMarker={destination ? { ...destination.coords, label: destination.label } : null}
+            tripSegments={tripSegments}
+          />
+        </div>
+        {tripSegments && (
+          <p className="trip-planner__map-hint">
+            Tracé approximatif (lignes droites entre arrêts réels) — aucune donnée de tracé de rue
+            n'est disponible pour ces lignes de transport.
+          </p>
+        )}
+      </div>
       </div>
     </main>
   );

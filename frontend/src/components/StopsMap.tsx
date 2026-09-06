@@ -107,6 +107,25 @@ const STOP_TYPE_LABELS: Record<string, string> = {
   PLATFORM: 'Quai',
 };
 
+// Un segment du plan de trajet multi-modal (marche ou trajet en ligne) tel
+// qu'affiché sur la carte — cf. buildTripSegments dans TripPlannerPage.tsx.
+// AUCUNE géométrie réelle de voirie n'existe pour ces segments (GTFS
+// shapes.txt confirmé absent des données JungleBus importées) : ce sont des
+// lignes droites entre points réels (arrêts GTFS ou coordonnées choisies par
+// l'utilisateur) — jamais présentées comme un tracé de rue exact, d'où le
+// style pointillé et le label honnête côté UI ("trajet approximatif").
+export interface TripSegment {
+  kind: 'walk' | 'ride';
+  coordinates: [number, number][]; // [lon, lat]
+  color?: string; // couleur de la ligne empruntée, pour un segment 'ride'
+}
+
+interface MapPoint {
+  lat: number;
+  lon: number;
+  label: string;
+}
+
 interface StopsMapProps {
   center: { lat: number; lon: number };
   stops: Stop[];
@@ -116,11 +135,64 @@ interface StopsMapProps {
   onRecenter?: () => void;
   // Tracé d'itinéraire (GeoJSON LineString, coords [lon, lat]) — null = aucun.
   routeGeometry?: RouteGeometry | null;
+  // Sélection d'un point par clic sur la carte (origine/destination du
+  // planificateur) — actif seulement quand un champ attend une sélection.
+  onMapClick?: (point: { lat: number; lon: number }) => void;
+  pickerActive?: boolean;
+  // Marqueurs distincts origine (vert) / destination (rouge) du planificateur.
+  originMarker?: MapPoint | null;
+  destinationMarker?: MapPoint | null;
+  // Segments du plan de trajet sélectionné, à dessiner en superposition.
+  tripSegments?: TripSegment[] | null;
 }
 
 // Source/couche du tracé d'itinéraire (ids réservés à cet usage).
 const ROUTE_SOURCE_ID = 'route';
 const ROUTE_LAYER_ID = 'route-line';
+// Source/couche des segments du plan de trajet multi-modal (distincte du
+// tracé point-à-point ci-dessus — les deux ne sont jamais actifs ensemble
+// dans l'usage réel de l'app, mais gardés séparés pour rester explicites).
+const TRIP_SEGMENTS_SOURCE_ID = 'trip-segments';
+const TRIP_SEGMENTS_LAYER_ID = 'trip-segments-line';
+
+function upsertTripSegmentsLayer(map: Map, segments: TripSegment[] | null): void {
+  const existing = map.getSource(TRIP_SEGMENTS_SOURCE_ID);
+  if (!segments || segments.length === 0) {
+    if (map.getLayer(TRIP_SEGMENTS_LAYER_ID)) map.removeLayer(TRIP_SEGMENTS_LAYER_ID);
+    if (existing) map.removeSource(TRIP_SEGMENTS_SOURCE_ID);
+    return;
+  }
+  const data = {
+    type: 'FeatureCollection' as const,
+    features: segments.map((seg) => ({
+      type: 'Feature' as const,
+      properties: { kind: seg.kind, color: seg.color ?? '#0A9396' },
+      geometry: { type: 'LineString' as const, coordinates: seg.coordinates },
+    })),
+  };
+  if (existing && existing.type === 'geojson') {
+    (existing as GeoJSONSource).setData(data);
+    return;
+  }
+  if (map.getLayer(TRIP_SEGMENTS_LAYER_ID)) map.removeLayer(TRIP_SEGMENTS_LAYER_ID);
+  if (existing) map.removeSource(TRIP_SEGMENTS_SOURCE_ID);
+  map.addSource(TRIP_SEGMENTS_SOURCE_ID, { type: 'geojson', data });
+  const firstSymbolLayer = map.getStyle().layers?.find((l) => l.type === 'symbol');
+  map.addLayer(
+    {
+      id: TRIP_SEGMENTS_LAYER_ID,
+      type: 'line',
+      source: TRIP_SEGMENTS_SOURCE_ID,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['match', ['get', 'kind'], 'walk', 3, 5],
+        'line-dasharray': ['match', ['get', 'kind'], 'walk', ['literal', [2, 2]], ['literal', [1, 0]]],
+      },
+    },
+    firstSymbolLayer?.id,
+  );
+}
 
 // Crée ou met à jour le tracé ; le supprime nettement si geometry est null
 // (pas de tracé fantôme). La couche est insérée SOUS la première couche de
@@ -170,11 +242,25 @@ export function StopsMap({
   isLocating,
   onRecenter,
   routeGeometry,
+  onMapClick,
+  pickerActive,
+  originMarker,
+  destinationMarker,
+  tripSegments,
 }: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const userMarkerRef = useRef<Marker | null>(null);
+  const originMarkerRef = useRef<Marker | null>(null);
+  const destinationMarkerRef = useRef<Marker | null>(null);
+  const tripSegmentsRef = useRef<TripSegment[] | null>(null);
+  // Callback de clic toujours à jour sans réattacher l'écouteur MapLibre à
+  // chaque re-render (la carte ne doit s'initialiser qu'une fois, cf. plus bas).
+  const onMapClickRef = useRef(onMapClick);
+  useEffect(() => {
+    onMapClickRef.current = onMapClick;
+  }, [onMapClick]);
   // Dernière géométrie connue : permet de redessiner le tracé après un
   // changement de style (setStyle purge les sources/couches perso).
   const routeGeometryRef = useRef<RouteGeometry | null>(null);
@@ -202,6 +288,8 @@ export function StopsMap({
     map.once('style.load', () => {
       const geometry = routeGeometryRef.current;
       if (geometry) upsertRouteLayer(map, geometry);
+      const segments = tripSegmentsRef.current;
+      if (segments) upsertTripSegmentsLayer(map, segments);
     });
   }
 
@@ -216,6 +304,13 @@ export function StopsMap({
     });
     map.addControl(new NavigationControl(), 'top-right');
     map.once('load', () => setMapReady(true));
+
+    // Sélection d'un point par clic (origine/destination du planificateur) —
+    // ignoré si aucun champ n'attend de sélection, ou si le clic touche un
+    // marqueur (élément DOM séparé, ne déclenche pas cet événement carte).
+    map.on('click', (e) => {
+      onMapClickRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+    });
 
     // Bascule automatique clé 1 → clé 2 → OSM sur un échec RÉEL de
     // chargement MapTiler (clé invalide, quota dépassé, panne) — jamais sur
@@ -257,6 +352,68 @@ export function StopsMap({
   useEffect(() => {
     mapRef.current?.setCenter([center.lon, center.lat]);
   }, [center.lat, center.lon]);
+
+  // Curseur "réticule" quand un champ du planificateur attend un clic sur la
+  // carte — seul indice visuel nécessaire, pas de tooltip flottant qui
+  // gênerait la lecture de la carte.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.getCanvas().style.cursor = pickerActive ? 'crosshair' : '';
+  }, [pickerActive, mapReady]);
+
+  // Marqueurs origine (vert) / destination (rouge) du planificateur — icône
+  // distincte des arrêts (couleurs réservées, cf. STOP_TYPE_COLORS) pour ne
+  // jamais laisser croire que ce sont des arrêts de transport réels.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    originMarkerRef.current?.remove();
+    originMarkerRef.current = originMarker
+      ? new Marker({ color: '#2a9d34' })
+          .setLngLat([originMarker.lon, originMarker.lat])
+          .setPopup(new Popup({ offset: 12 }).setText(`Départ : ${originMarker.label}`))
+          .addTo(map)
+      : null;
+    return () => {
+      originMarkerRef.current?.remove();
+      originMarkerRef.current = null;
+    };
+  }, [originMarker, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    destinationMarkerRef.current?.remove();
+    destinationMarkerRef.current = destinationMarker
+      ? new Marker({ color: '#c1121f' })
+          .setLngLat([destinationMarker.lon, destinationMarker.lat])
+          .setPopup(new Popup({ offset: 12 }).setText(`Arrivée : ${destinationMarker.label}`))
+          .addTo(map)
+      : null;
+    return () => {
+      destinationMarkerRef.current?.remove();
+      destinationMarkerRef.current = null;
+    };
+  }, [destinationMarker, mapReady]);
+
+  // Segments du plan de trajet sélectionné — mêmes règles de redessin que le
+  // tracé point-à-point (upsertRouteLayer) : mise à jour en place si possible,
+  // recréation après un changement de style qui purge les couches perso.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const segments = tripSegments ?? null;
+    tripSegmentsRef.current = segments;
+    upsertTripSegmentsLayer(map, segments);
+    if (segments && segments.length > 0) {
+      const bounds = segments.reduce(
+        (b, seg) => seg.coordinates.reduce((bb, [lon, lat]) => bb.extend([lon, lat]), b),
+        new LngLatBounds(),
+      );
+      map.fitBounds(bounds, { padding: 60 });
+    }
+  }, [tripSegments, mapReady]);
 
   // Bascule de style : les Markers sont des éléments DOM indépendants des
   // couches du style, ils survivent à setStyle() sans avoir à être recréés.

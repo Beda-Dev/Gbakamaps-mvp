@@ -1675,6 +1675,23 @@ textarea.home__report-input {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* Formulaire + carte côte à côte sur écran large ; empilés (carte en
+   dessous, hauteur fixe) sur mobile — la carte reste secondaire au
+   formulaire, jamais l'inverse (cf. mobile-first du reste de l'app). */
+.trip-planner__layout {
+  width: 100%;
+  max-width: 72rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 860px) {
+  .trip-planner__layout {
+    flex-direction: column;
+  }
+}
+
 .trip-planner__card {
   width: 100%;
   max-width: 36rem;
@@ -1686,6 +1703,41 @@ textarea.home__report-input {
   flex-direction: column;
   gap: 1rem;
   align-self: flex-start;
+  flex-shrink: 0;
+}
+
+.trip-planner__map-panel {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.trip-planner__map-panel .trip-planner__map {
+  height: 420px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+@media (max-width: 860px) {
+  .trip-planner__map-panel {
+    position: static;
+    order: -1;
+  }
+  .trip-planner__map-panel .trip-planner__map {
+    height: 260px;
+  }
+}
+
+.trip-planner__map-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-secondary, #6b6b6b);
 }
 
 .trip-planner__header {
@@ -1804,6 +1856,32 @@ textarea.home__report-input {
   cursor: pointer;
   display: inline-flex;
   padding: 0.1rem;
+}
+
+.trip-field__pick-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 0.2rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.trip-field__pick-btn:hover {
+  color: var(--color-primary);
+}
+
+.trip-field__pick-btn.is-active {
+  color: white;
+  background: var(--color-primary);
+}
+
+.trip-field__hint {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-primary);
 }
 
 .trip-field__results {
