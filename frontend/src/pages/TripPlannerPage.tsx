@@ -12,6 +12,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStopSearch } from '@/hooks/useStopSearch';
+import { usePlaceSearch } from '@/hooks/usePlaceSearch';
 import {
   formatTripCost,
   formatTripDistance,
@@ -27,6 +28,7 @@ import {
   FootprintsIcon,
   LoaderIcon,
   LocateFixedIcon,
+  MapPinIcon,
   SearchIcon,
   XIcon,
 } from '@/components/icons';
@@ -79,7 +81,8 @@ function PlaceField({
   onChange: (place: Place | null) => void;
   near?: TripCoordinates | null;
 }) {
-  const { text, search, clear, isPending, results, isError } = useStopSearch(near);
+  const stopSearch = useStopSearch(near);
+  const placeSearch = usePlaceSearch();
   const [isFocused, setIsFocused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const listboxId = useId();
@@ -94,17 +97,37 @@ function PlaceField({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  function handleSelect(stop: Stop) {
+  // Un seul champ pilote les deux recherches (arrêts connus + lieux
+  // quelconques) — jamais deux champs séparés qui laisseraient croire à
+  // l'utilisateur que ce sont deux systèmes différents (demande explicite :
+  // "comme Google Maps", un seul système cohérent).
+  function handleTextChange(value: string) {
+    stopSearch.search(value);
+    placeSearch.search(value);
+  }
+
+  function handleSelectStop(stop: Stop) {
     onChange({ label: stop.name ?? 'Arrêt sans nom', coords: { lat: stop.lat, lon: stop.lon } });
-    clear();
+    stopSearch.clear();
+    placeSearch.clear();
+    setIsFocused(false);
+  }
+
+  function handleSelectPlace(place: { name: string; lat: number; lon: number }) {
+    onChange({ label: place.name, coords: { lat: place.lat, lon: place.lon } });
+    stopSearch.clear();
+    placeSearch.clear();
     setIsFocused(false);
   }
 
   function handleClear() {
     onChange(null);
-    clear();
+    stopSearch.clear();
+    placeSearch.clear();
   }
 
+  const text = stopSearch.text;
+  const isPending = stopSearch.isPending || placeSearch.isPending;
   const showDropdown = isFocused && !value && text.trim().length >= 2;
 
   return (
@@ -126,9 +149,9 @@ function PlaceField({
             aria-controls={listboxId}
             aria-autocomplete="list"
             className="trip-field__input"
-            placeholder="Chercher un arrêt…"
+            placeholder="Chercher un arrêt ou un lieu…"
             value={text}
-            onChange={(e) => search(e.target.value)}
+            onChange={(e) => handleTextChange(e.target.value)}
             onFocus={() => setIsFocused(true)}
           />
         )}
@@ -143,20 +166,46 @@ function PlaceField({
       </div>
       {showDropdown && (
         <ul className="trip-field__results" id={listboxId} role="listbox">
-          {isError && (
+          {stopSearch.isError && placeSearch.isError && (
             <li className="trip-field__message" role="alert">
               Recherche indisponible. Réessayez.
             </li>
           )}
-          {!isError && !isPending && results.length === 0 && (
-            <li className="trip-field__message" role="status">
-              Aucun arrêt ne correspond à « {text.trim()} ».
-            </li>
-          )}
-          {results.map((stop) => (
-            <li key={stop.id} role="option" aria-selected={false}>
-              <button type="button" className="trip-field__result" onClick={() => handleSelect(stop)}>
+          {!isPending &&
+            stopSearch.results.length === 0 &&
+            placeSearch.results.length === 0 &&
+            !(stopSearch.isError && placeSearch.isError) && (
+              <li className="trip-field__message" role="status">
+                Aucun résultat pour « {text.trim()} ».
+              </li>
+            )}
+          {/* Arrêts connus en premier — toujours prioritaires, ce sont ceux
+              pour lesquels nous avons de vraies données de transport. */}
+          {stopSearch.results.map((stop) => (
+            <li key={`stop-${stop.id}`} role="option" aria-selected={false}>
+              <button
+                type="button"
+                className="trip-field__result trip-field__result--stop"
+                onClick={() => handleSelectStop(stop)}
+              >
+                <BusIcon width={14} height={14} aria-hidden="true" />
                 {stop.name ?? 'Arrêt sans nom'}
+              </button>
+            </li>
+          ))}
+          {/* Lieux quelconques (Overpass) — visuellement distincts, jamais
+              présentés comme des arrêts de transport (pas de données de
+              ligne associées, juste un point géographique). */}
+          {placeSearch.results.map((place, i) => (
+            <li key={`place-${i}`} role="option" aria-selected={false}>
+              <button
+                type="button"
+                className="trip-field__result trip-field__result--place"
+                onClick={() => handleSelectPlace(place)}
+              >
+                <MapPinIcon width={14} height={14} aria-hidden="true" />
+                {place.name}
+                <span className="trip-field__result-tag">lieu</span>
               </button>
             </li>
           ))}
