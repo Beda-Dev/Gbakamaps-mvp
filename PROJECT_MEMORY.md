@@ -297,6 +297,18 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 **Fichiers concernés** : `frontend/src/lib/api/client.ts`.
 **Leçon** : ce bug n'était détectable ni par les tests unitaires (fetch mocké, qui ne reproduit pas le comportement strict de Fastify) ni par `tsc`/`build` — seul un test de bout en bout contre le vrai backend l'a révélé.
 
+### 2026-09-06 17:40 — Écran favoris : deux chevauchements de layout desktop en cascade
+
+**Symptôme 1** : clic sur le bouton favori (ajouté dans le titre du panneau détail d'un arrêt) intercepté par le bouton fermer (X) du même panneau.
+**Cause** : `.home__detail-close` est en `position:absolute` (top/right fixes) dans le coin du panneau ; le bouton favori, lui, est en flux normal dans `.home__detail-title` (flex row) et son cercle de 44px atterrit exactement dans la même zone.
+**Solution** : `padding-right` sur `.home__detail-title` pour dégager la zone occupée par le bouton fermer.
+
+**Symptôme 2 (introduit en corrigeant naïvement le symptôme 1 avec un z-index)** : après avoir donné à `.home__topbar` un `z-index` plus élevé que `.home__detail` pour que le lien "Favoris" ne soit plus caché par le panneau latéral desktop, c'est l'inverse qui s'est produit — la topbar (maintenant au-dessus dans l'empilement) intercepte les clics sur le bouton favori situé en haut du panneau, car les deux zones occupent le même espace écran (le panneau desktop démarrait à `top:0`, exactement sous la topbar).
+**Cause profonde** : le problème n'était pas un conflit d'empilement (z-index) mais un chevauchement spatial réel entre deux zones qui n'auraient jamais dû se recouvrir.
+**Solution correcte** : séparation spatiale. Nouvelle variable CSS `--topbar-height: 3.625rem` (mesurée réellement via un diagnostic Playwright, pas devinée), `.home__topbar` passe de `min-height` variable à `height` fixe, et `.home__detail` (variante desktop uniquement, media query `min-width:768px`) démarre à `top: var(--topbar-height)` au lieu de `top: 0`.
+**Fichiers concernés** : `frontend/src/index.css`.
+**Leçon** : un premier correctif basé sur le z-index a semblé résoudre le problème signalé (le lien redevenait cliquable) mais a déplacé le bug ailleurs sans le résoudre — revérifier par un test de bout en bout APRÈS un correctif de layout, pas seulement constater que le symptôme initial a disparu. Un problème de chevauchement spatial se corrige dans l'espace (positions/dimensions), pas par une course à l'empilement (z-index).
+
 ---
 
 ## 6. Historique des modifications (chronologique, par commit)
@@ -313,7 +325,40 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 02:14 | `818eb8b` | Passe UX/UI, délégué à OpenCode | 2 bugs bloquants trouvés et corrigés (alias `@`, maplibre worker) via test visuel réel |
 | 2026-09-06 16:37 | `c02f6a4` | CORS multi-origine (tunnel) + icônes Lucide | Support tunnel VS Code pour test mobile |
 | 2026-09-06 17:00 | `afd10c2` | Écrans auth (login/signup) + routage, délégué à OpenCode | 2 bugs runtime trouvés et corrigés (proxy Vite, Content-Type vide) via test navigateur réel |
-| 2026-09-06 17:3x | *(à committer)* | Remplacement OSRM → OpenRouteService, écrit directement | 52 tests backend, 3 profils réellement distincts vérifiés (10,3/24,9/72,6 min sur le même trajet) |
+| 2026-09-06 17:04 | `8ddfde9` | Création PROJECT_MEMORY.md | Mémoire persistante instaurée |
+| 2026-09-06 17:23 | `63c66dd` | Remplacement OSRM → OpenRouteService, écrit directement | 52 tests backend, 3 profils réellement distincts vérifiés (10,3/24,9/72,6 min sur le même trajet) |
+| 2026-09-06 17:45 | `3494b9e` | Écran favoris, délégué à OpenCode | 2 bugs de layout desktop trouvés et corrigés (chevauchement bouton favori/fermer, puis panneau/topbar) via test navigateur réel |
+
+---
+
+## 5bis. Mode autonome (à partir du 2026-09-06 17:50)
+
+**Directive de l'utilisateur** : la session opère désormais en mode autonome — décisions techniques/architecturales/UX de routine prises directement sans validation préalable ; validation utilisateur requise uniquement pour les opérations dangereuses/irréversibles (destruction de données, actions financières, déploiement prod risqué). Objectif révisé : dépasser le MVP pour viser un produit réellement abouti (UX soignée, accessibilité, performance, cohérence visuelle), avec une réflexion "temps réel" dès la conception (sans sur-construire prématurément), adapté spécifiquement au contexte ivoirien, recherché plutôt que supposé, et documenté au fil de l'eau dans ce fichier.
+
+### Recherche réelle effectuée (2026-09-06 17:50) — mobilité en Côte d'Ivoire
+
+Sources : recherche web réelle (pas une supposition), voir requêtes dans l'historique de session.
+
+**Faits vérifiés** :
+- La congestion routière coûterait 4 à 5 % du revenu national ivoirien par an (estimation Banque Mondiale, relayée par Ecofin Agency).
+- Plus de 500 accidents corporels recensés sur les premiers mois de 2026, 164 morts, ~2000 blessés (source : Ecofin Agency).
+- Une opération de répression ciblant spécifiquement les gbaka a été lancée fin août 2026 par la DGTTC (Direction Générale des Transports Terrestres et de la Circulation) — le secteur informel est sous pression réglementaire active, pas en voie de disparition mais en évolution.
+- Le métro d'Abidjan (Ligne 1) est en phase d'électrification (début 2026), mise en service commerciale attendue **2029** — pas une solution à court/moyen terme.
+- SOTRA a plus que doublé sa flotte (1022 bus en 2011 → 2050 en 2024), 200 bus supplémentaires livrés en juillet 2025 — le réseau formel se renforce mais reste minoritaire face à l'informel.
+
+**Conclusion produit, tirée de ces faits (pas une hypothèse)** : le transport informel (gbaka/woro-woro) restera dominant pendant des années — les investissements dans GbakaMap sur ce secteur restent pertinents à moyen terme, pas obsolètes face au métro.
+
+### Recherche réelle effectuée (2026-09-06 17:50) — bonnes pratiques UX transport (Citymapper/Moovit/Transit)
+
+**Faits vérifiés** : Moovit et Transit App sont réputés les plus fiables sur les délais temps réel et les prédictions d'arrivée bus ; Citymapper se distingue sur la combinaison multimodale (métro+bus+ferry+vélo) en un seul plan de trajet. Bonnes pratiques citées : interface simplifiée, information claire, chargement rapide, accessibilité, widgets d'info plutôt que notifications intrusives, tenir l'utilisateur informé en cas de perturbation avec un nouveau plan de trajet proposé.
+
+**Limite reconnue explicitement** : ces pratiques reposent sur des données temps réel de véhicules (GPS des bus/métros) que nous n'avons pas et ne pouvons pas obtenir pour les gbaka/woro-woro (aucune télémétrie n'existe côté opérateurs informels — fait déjà établi précédemment, reconfirmé ici). **Ne pas copier ces patterns tels quels** — les adapter à ce qui est réellement possible avec nos données (topologie GTFS statique + position du passager, pas du véhicule).
+
+### Décision produit issue de cette recherche : "Suivre mon trajet" (passager, pas véhicule)
+
+**Idée retenue** : une fois qu'un itinéraire est calculé (écran itinéraire, pas encore construit), permettre à l'utilisateur de "suivre" son trajet — sa propre position GPS progresse sur la carte le long du tracé (déjà renvoyé en GeoJSON par OpenRouteService), avec une alerte "vous approchez de votre arrêt/destination" à l'approche. **Ce n'est PAS du suivi de véhicule** (aucune donnée pour ça) — c'est un repère honnête pour l'utilisateur pendant son propre déplacement, qui répond à un vrai besoin (ne pas savoir où descendre, ne pas savoir combien de trajet il reste).
+**Statut** : idée validée par la recherche, **pas encore implémentée**. Séquencement voulu : après les écrans MVP core encore manquants (itinéraire, signalements) — cohérent avec la priorisation de l'utilisateur (fonctionnalités essentielles avant différenciateurs). Voir §9 tâches restantes.
+**Ce qui ne sera PAS fait** (limite honnête à conserver) : position live des gbaka/woro-woro sur la carte (aucune source de données), ETA basé sur du trafic live (aucune source pour Abidjan identifiée à ce jour), notifications de retard de véhicule (rien à mesurer).
 
 ---
 
@@ -355,30 +400,38 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 ## 9. Tâches restantes
 
-### 🔴 Priorité haute
-- Écran favoris (liste + suppression depuis l'UI)
-- Écran signalements (création + liste "mes signalements")
-- Écran de modération admin (liste des signalements, changement de statut)
+*(Mise à jour 2026-09-06 17:50, mode autonome — voir §5bis)*
 
-### 🟠 Priorité moyenne
-- Écran/UI pour le calcul d'itinéraire (`routing`)
+### 🔴 Priorité haute (fonctionnalités essentielles manquantes)
+- ~~Écran favoris~~ ✅ fait (commit `3494b9e`)
+- Écran signalements (création + liste "mes signalements") — backend prêt et testé, aucun écran
+- Écran/UI pour le calcul d'itinéraire (`routing`, 3 profils réels ORS) — backend prêt et testé, aucun écran. Prérequis pour "Suivre mon trajet" (§5bis).
+- Écran de modération admin (liste des signalements, changement de statut) — backend prêt et testé, aucun écran
+
+### 🟠 Priorité moyenne (UX/robustesse)
+- "Suivre mon trajet" (§5bis) : position du passager en direct sur le tracé calculé, alerte à l'approche de l'arrêt/destination — différenciateur validé par la recherche, nécessite l'écran itinéraire d'abord
 - Tests d'intégration end-to-end front+back (au moins un parcours critique testé avec un vrai navigateur, pas seulement fetch mocké)
 - Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir
+- Affichage des tarifs (`TransportLine.fare`) — actuellement toujours `null` (le GTFS JungleBus ne les fournit pas) ; des données réelles existent publiquement (ex. budgetabidjan.com, trouvé pendant la recherche §5bis) — à évaluer comme source d'enrichissement manuel ou via signalements communautaires
+- Accessibilité : audit systématique (contrastes, navigation clavier, lecteurs d'écran) — pas encore fait au-delà des `aria-label`/`role` ajoutés au fil de l'eau
 
 ### 🟢 Priorité faible
-- WebSocket/realtime pour la modération (design esquissé en §4, non implémenté — à ne considérer qu'après les écrans manquants ci-dessus)
+- WebSocket/realtime pour la modération (design esquissé en §4, non implémenté)
 - CI/CD (délibérément non prioritaire tant que le MVP n'est pas stabilisé)
-- Réexaminer le mode "driving" unique d'OSRM si une instance auto-hébergée avec plusieurs profils devient disponible
+- Réexaminer le choix ORS si un jour une instance auto-hébergée devient pertinente au volume du projet
+
+### Explicitement écarté (limite honnête, pas un oubli — voir §5bis)
+- Position live des véhicules gbaka/woro-woro (aucune source de données, aucune ne semble exister)
+- ETA basé sur le trafic routier en direct (aucune source identifiée pour Abidjan)
+- Notifications de retard de véhicule (rien à mesurer sans télémétrie)
 
 ---
 
 ## 10. Prochaine action
 
-**Écran favoris : spec de délégation déjà rédigée mais PAS ENCORE EXÉCUTÉE.** Le fichier de tâche existe dans le scratchpad de session (`opencode-task-favorites-screen.md`, non versionné dans ce dépôt) mais la commande de délégation à OpenCode n'a jamais été lancée — interrompue par une question de l'utilisateur sur le choix de l'outil de routing, qui a pris la priorité (résolu, voir §4 OpenRouteService). **Une icône `StarIcon` a déjà été ajoutée** dans `frontend/src/components/icons/index.tsx` en anticipation de cet écran.
+**Mode autonome actif (§5bis) : la session enchaîne désormais les tâches de la §9 sans attendre de validation entre chacune**, sauf décision réellement risquée/irréversible.
 
-À la reprise : soit relancer la délégation (recréer la spec en s'inspirant de §9), soit l'écrire directement. Pattern à suivre : `LoginPage.tsx`/`SignupPage.tsx` et `useAuth.ts` pour la convention de page + hook, `HomePage.tsx` pour l'intégration dans la mise en page existante (panneau détail d'un arrêt = bon endroit pour un bouton favori). **Après toute implémentation frontend, systématiquement vérifier en navigateur réel (pas seulement tsc/build/vitest)** avant de commiter — cf. §8, deux bugs runtime ont échappé aux trois vérifications automatisées lors du lot précédent (écrans auth).
-
-**Écran itinéraire** : le backend expose désormais 3 profils réels (`driving-car`/`foot-walking`/`cycling-regular`, voir §4) — un écran qui les exploite (sélecteur de mode, affichage du tracé sur la carte via `geometry` GeoJSON déjà retourné) a maintenant une vraie valeur ajoutée, alors que ce n'était pas le cas tant qu'un seul profil (OSRM) était fiable.
+Ordre d'exécution décidé : (1) écran itinéraire — prérequis technique de "Suivre mon trajet" et backend déjà prêt/testé depuis le remplacement OSRM→ORS ; (2) écran signalements ; (3) écran modération admin ; (4) "Suivre mon trajet". Pattern établi à réutiliser à chaque fois : `LoginPage.tsx`/`FavoritesPage.tsx` + hook dédié (`useAuth.ts`/`useFavorites.ts`) pour la convention page+hook, délégation à OpenCode (gratuit, a bien fonctionné 3 fois) pour un premier jet suivi d'une revue + vérification indépendante systématique (tsc, vitest, ET navigateur réel piloté — deux lots consécutifs ont chacun révélé des bugs invisibles aux trois premières vérifications, voir §5).
 
 ---
 
