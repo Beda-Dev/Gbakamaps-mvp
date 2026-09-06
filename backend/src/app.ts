@@ -18,6 +18,7 @@ import { reportsRoutes } from './modules/reports/reports.routes.js';
 import { routingRoutes } from './modules/routing/routing.routes.js';
 import { tripPlanningRoutes } from './modules/trip-planning/trip-planning.routes.js';
 import { linesRoutes } from './modules/lines/lines.routes.js';
+import { placesRoutes } from './modules/places/places.routes.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -74,6 +75,7 @@ export async function buildApp() {
   await app.register(routingRoutes, { prefix: '/api' });
   await app.register(tripPlanningRoutes, { prefix: '/api' });
   await app.register(linesRoutes, { prefix: '/api' });
+  await app.register(placesRoutes, { prefix: '/api' });
 
   // Tous les modules métier du MVP sont enregistrés (auth, stops,
   // favorites, reports, routing).
