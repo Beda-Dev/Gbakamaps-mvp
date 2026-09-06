@@ -2,7 +2,7 @@
 
 > **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
 
-Dernière mise à jour : **2026-09-06 18:55**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+Dernière mise à jour : **2026-09-06 19:00**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
 
 **Règle adoptée pendant cette session (2026-09-06 17:05), à appliquer systématiquement** : avant d'adopter tout nouvel outil/service externe dans ce projet (librairie, API tierce, etc.), faire une recherche réelle (web + test empirique si possible) sur sa fiabilité/ses limites plutôt que de se fier à sa réputation ou sa documentation seule — c'est exactement ce qui a révélé qu'OSRM ne distinguait pas ses profils malgré ce qu'affirme sa propre doc (voir §4).
 
@@ -42,19 +42,19 @@ Dernière mise à jour : **2026-09-06 18:55**, par la session Claude Opus 5 qui 
 - Bandeau d'état de connexion (`AuthStatus`) intégré à la page d'accueil, avec liens Favoris/Signalements (connecté) et Modération (admin uniquement)
 - Panneau détail d'arrêt enrichi : favori, calcul d'itinéraire (3 profils ORS, tracé sur la carte), signalement (formulaire inline)
 - Écran `/reports` (mes signalements) et `/admin/reports` (modération : filtres par statut, actions Approuver/Rejeter/Résoudre)
+- "Suivre mon trajet" : une fois un itinéraire calculé, suivi GPS continu du passager (pas du véhicule), alerte d'approche (<150m) puis d'arrivée (<30m, arrêt automatique du suivi)
 - Icônes SVG inlinées depuis Lucide (licence documentée)
 
 **Tests** :
 - Backend : **52 tests** d'intégration réels (vitest + vraie base PostgreSQL/PostGIS dockerisée, zéro mock de la DB)
-- Frontend : **35 tests** de composants/hooks (vitest + jsdom + testing-library, fetch mocké)
+- Frontend : **47 tests** de composants/hooks (vitest + jsdom + testing-library, fetch mocké)
 
 ### Fonctionnalités en cours / partiellement faites 🚧
 
-- Rien "en cours" au sens strict au moment de la rédaction — **tous les écrans MVP haute priorité (§9) sont maintenant terminés et commités**, y compris la modération admin.
+- Rien "en cours" au sens strict au moment de la rédaction — **tous les écrans MVP haute priorité ET le différenciateur "Suivre mon trajet" (§5bis) sont maintenant terminés et commités**.
 
-### Fonctionnalités restantes ❌ (au-delà du MVP core, voir §9 pour le détail priorisé)
+### Fonctionnalités restantes ❌ (au-delà du MVP core + différenciateur, voir §9 pour le détail priorisé)
 
-- "Suivre mon trajet" (position passager en direct sur l'itinéraire calculé) — différenciateur validé par la recherche (§5bis), pas encore implémenté
 - Tests d'intégration end-to-end frontend↔backend automatisés (le câblage complet a été vérifié manuellement en navigateur réel piloté à chaque lot, mais rien de tout ça n'est dans la suite de tests committée)
 
 ### Explicitement HORS MVP (décision produit, pas oubli)
@@ -63,7 +63,7 @@ Météo, mode hors-ligne, historique de recherche, comparaison d'itinéraires mu
 
 ### État global
 
-**Backend : solide et testé.** Tous les modules du périmètre MVP existent, sont testés (52/52), et ont été vérifiés en conteneur Docker. **Frontend : MVP complet.** Carte, auth, favoris, itinéraire, signalements et modération admin fonctionnent tous et ont été vérifiés en navigateur réel (Playwright, pas seulement `tsc`/`build`/`vitest`). Prochaine étape : dépasser le MVP (voir §9 🟠/🟢 et §5bis "Suivre mon trajet").
+**Backend : solide et testé.** Tous les modules du périmètre MVP existent, sont testés (52/52), et ont été vérifiés en conteneur Docker. **Frontend : MVP complet + différenciateur.** Carte, auth, favoris, itinéraire, signalements, modération admin et "Suivre mon trajet" fonctionnent tous et ont été vérifiés en navigateur réel (Playwright, pas seulement `tsc`/`build`/`vitest`) — y compris une simulation GPS complète pour le suivi. Prochaine étape : items 🟠/🟢 restants de §9 (tests e2e automatisés, accessibilité, code-splitting, tarifs).
 
 ---
 
@@ -330,6 +330,7 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 18:14 | `be04a90` | Écran itinéraire intégré à la carte, délégué à OpenCode | 17/17 tests, flux complet vérifié en navigateur (760m/2min cohérent, tracé affiché), zéro bug de layout cette fois (panneau en flex-wrap, pas position:absolute) |
 | 2026-09-06 18:2x | `0b30b51` | Écran signalements (formulaire inline + liste), délégué à OpenCode | 25/25 tests, vérification backend curl particulièrement complète par l'agent lui-même (4 cas), flux complet confirmé en navigateur, zéro bug de layout (3 boutons du panneau détail cohabitent) |
 | 2026-09-06 18:55 | `0c44855` | Écran de modération admin (`/admin/reports`), délégué à OpenCode | 35/35 tests, vérification indépendante complète (tsc/vitest/build + test navigateur réel Playwright couvrant anonyme/non-admin/admin avec un vrai compte promu ADMIN en SQL, création+approbation réelle d'un signalement via l'UI, mobile vérifié) — **zéro bug trouvé**, tous les écrans MVP haute priorité (§9) sont désormais terminés |
+| 2026-09-06 19:00 | `96b1f3a` | "Suivre mon trajet" (`useLiveTracking.ts` + intégration panneau itinéraire), délégué à OpenCode | 47/47 tests, vérification indépendante complète (tsc/vitest/build + **simulation GPS réelle en navigateur** via `context.setGeolocation()` sur 6 points interpolés vers un arrêt réel : distance décroissante affichée correctement, alerte d'approche puis d'arrivée au bon moment, arrêt automatique du suivi confirmé) — **zéro bug trouvé**, différenciateur §5bis terminé |
 
 ---
 
@@ -356,10 +357,10 @@ Sources : recherche web réelle (pas une supposition), voir requêtes dans l'his
 
 **Limite reconnue explicitement** : ces pratiques reposent sur des données temps réel de véhicules (GPS des bus/métros) que nous n'avons pas et ne pouvons pas obtenir pour les gbaka/woro-woro (aucune télémétrie n'existe côté opérateurs informels — fait déjà établi précédemment, reconfirmé ici). **Ne pas copier ces patterns tels quels** — les adapter à ce qui est réellement possible avec nos données (topologie GTFS statique + position du passager, pas du véhicule).
 
-### Décision produit issue de cette recherche : "Suivre mon trajet" (passager, pas véhicule)
+### Décision produit issue de cette recherche : "Suivre mon trajet" (passager, pas véhicule) — ✅ implémenté le 2026-09-06 19:00
 
-**Idée retenue** : une fois qu'un itinéraire est calculé (écran itinéraire, pas encore construit), permettre à l'utilisateur de "suivre" son trajet — sa propre position GPS progresse sur la carte le long du tracé (déjà renvoyé en GeoJSON par OpenRouteService), avec une alerte "vous approchez de votre arrêt/destination" à l'approche. **Ce n'est PAS du suivi de véhicule** (aucune donnée pour ça) — c'est un repère honnête pour l'utilisateur pendant son propre déplacement, qui répond à un vrai besoin (ne pas savoir où descendre, ne pas savoir combien de trajet il reste).
-**Statut** : idée validée par la recherche, **pas encore implémentée**. Séquencement voulu : après les écrans MVP core encore manquants (itinéraire, signalements) — cohérent avec la priorisation de l'utilisateur (fonctionnalités essentielles avant différenciateurs). Voir §9 tâches restantes.
+**Idée retenue** : une fois qu'un itinéraire est calculé, permettre à l'utilisateur de "suivre" son trajet — sa propre position GPS progresse sur la carte le long du tracé (déjà renvoyé en GeoJSON par OpenRouteService), avec une alerte "vous approchez de votre arrêt/destination" à l'approche. **Ce n'est PAS du suivi de véhicule** (aucune donnée pour ça) — c'est un repère honnête pour l'utilisateur pendant son propre déplacement, qui répond à un vrai besoin (ne pas savoir où descendre, ne pas savoir combien de trajet il reste).
+**Statut** : **implémenté et vérifié** (commit `96b1f3a`). `useLiveTracking.ts` (watchPosition continu + haversine), bouton "Suivre mon trajet" dans le panneau itinéraire, position injectée dans le marqueur utilisateur existant de `StopsMap` (aucun marqueur supplémentaire), alerte d'approche à 150m, arrivée + arrêt automatique du suivi à 30m. Vérifié par simulation GPS réelle en navigateur (Playwright `context.setGeolocation()`), zéro bug trouvé — voir §6.
 **Ce qui ne sera PAS fait** (limite honnête à conserver) : position live des gbaka/woro-woro sur la carte (aucune source de données), ETA basé sur du trafic live (aucune source pour Abidjan identifiée à ce jour), notifications de retard de véhicule (rien à mesurer).
 
 ---
@@ -414,7 +415,7 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 ### 🟠 Priorité moyenne (UX/robustesse)
 - **Sécurité (audit `npm audit` fait le 2026-09-06 18:35)** : backend a 3 vulnérabilités "high" via `deepmerge-ts` (dépendance transitive de `@prisma/config`, utilisée par la CLI `prisma`, une devDependency). Risque réel jugé faible : ce code n'est jamais exécuté par `node dist/server.js` (le process qui tourne réellement), seulement si quelqu'un invoquait `npx prisma` avec une configuration malveillante — pas un vecteur d'attaque réseau. **Cause racine** : le `Dockerfile` fait `npm install` sans `--omit=dev` dans le build final, donc les devDependencies (dont `prisma` CLI) finissent dans l'image de production. Correctif simple rejeté pour l'instant : `npm audit fix --force` imposerait un downgrade Prisma cassant. Correctif propre (séparer un stage `prod-deps` avec `--omit=dev`) **reporté** car il casserait la commande pratique `docker compose exec backend npm run import:gtfs` (utilise `tsx`, une devDependency) sans plan de remplacement immédiat. Frontend : 0 vulnérabilité.
-- "Suivre mon trajet" (§5bis) : position du passager en direct sur le tracé calculé, alerte à l'approche de l'arrêt/destination — différenciateur validé par la recherche, nécessite l'écran itinéraire d'abord
+- ~~"Suivre mon trajet"~~ ✅ fait (commit `96b1f3a`) — voir §5bis
 - Tests d'intégration end-to-end front+back (au moins un parcours critique testé avec un vrai navigateur, pas seulement fetch mocké)
 - Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir
 - Affichage des tarifs (`TransportLine.fare`) — actuellement toujours `null` (le GTFS JungleBus ne les fournit pas) ; des données réelles existent publiquement (ex. budgetabidjan.com, trouvé pendant la recherche §5bis) — à évaluer comme source d'enrichissement manuel ou via signalements communautaires
@@ -436,7 +437,9 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 **Mode autonome actif (§5bis) : la session enchaîne désormais les tâches de la §9 sans attendre de validation entre chacune**, sauf décision réellement risquée/irréversible.
 
-Ordre exécuté : (1) écran itinéraire ✅, (2) écran signalements ✅, (3) écran modération admin ✅ — **le périmètre MVP haute priorité est terminé** (2026-09-06 18:55). Prochaine tâche engagée : (4) "Suivre mon trajet" (§5bis/§9 🟠) — position du passager en direct sur le tracé ORS déjà calculé, alerte à l'approche. Pattern établi à réutiliser : délégation à OpenCode pour un premier jet suivi d'une revue + vérification indépendante systématique (tsc, vitest, ET navigateur réel piloté — quatre lots sur cinq ont révélé des bugs invisibles aux trois premières vérifications seules, voir §5 ; le 5e, la modération admin, est le premier lot sans aucun bug trouvé, ce qui valide que les patterns établis — flex-wrap, hooks dédiés — préviennent désormais la classe de bugs déjà rencontrée).
+Ordre exécuté : (1) écran itinéraire ✅, (2) écran signalements ✅, (3) écran modération admin ✅, (4) "Suivre mon trajet" ✅ (2026-09-06 19:00) — **le périmètre MVP haute priorité ET le différenciateur validé par la recherche produit sont tous les deux terminés**. Les deux derniers lots (modération admin, suivi GPS) n'ont révélé aucun bug, ce qui valide que les patterns établis (flex-wrap sans position:absolute, hooks dédiés par domaine, clearWatch systématique) préviennent désormais les classes de bugs déjà rencontrées deux fois chacune en début de projet (voir §5).
+
+**Prochaine étape à engager** : items 🟠/🟢 restants de §9 — dans l'ordre de valeur perçue : (a) tests d'intégration end-to-end automatisés (au moins un parcours critique, pas seulement du fetch mocké — combler la seule lacune de couverture répétée dans ce fichier), (b) accessibilité (audit systématique, pas seulement ad hoc), (c) code-splitting si le bundle continue de grossir (actuellement ~1,35 Mo), (d) tarifs des lignes (source externe à évaluer). Aucune de ces tâches n'est bloquante ni risquée — à enchaîner en mode autonome selon le même protocole (délégation ciblée si pertinent, vérification indépendante systématique, navigateur réel avant de déclarer terminé).
 
 ---
 
