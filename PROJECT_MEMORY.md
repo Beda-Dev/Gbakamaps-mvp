@@ -2,7 +2,7 @@
 
 > **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
 
-Dernière mise à jour : **2026-09-06 19:15**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+Dernière mise à jour : **2026-09-06 19:20**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
 
 **Règle adoptée pendant cette session (2026-09-06 17:05), à appliquer systématiquement** : avant d'adopter tout nouvel outil/service externe dans ce projet (librairie, API tierce, etc.), faire une recherche réelle (web + test empirique si possible) sur sa fiabilité/ses limites plutôt que de se fier à sa réputation ou sa documentation seule — c'est exactement ce qui a révélé qu'OSRM ne distinguait pas ses profils malgré ce qu'affirme sa propre doc (voir §4).
 
@@ -458,3 +458,53 @@ Le test e2e critique (2026-09-06 19:15, commit `90e5f15`) clôt la dernière lac
 ### Session 1 — 2026-09-05 → 2026-09-06 (Claude Opus 5 / Sonnet 5, alternées)
 
 Audit complet de l'ancien projet `GbakaMaps` (score 3,1/10, voir §7), décision de reconstruction validée par l'utilisateur, puis construction complète de ce nouveau projet du squelette backend jusqu'aux écrans d'authentification frontend (10 commits, voir §6). Deux incidents opérationnels gérés en cours de route (Docker Desktop tué par erreur, conteneur backend connecté à l'ancienne base Neon) — tous deux résolus sans perte de données. Délégation à des agents externes (OpenCode, modèle gratuit `muse-spark-1.3-contributor-free`) testée et validée sur 3 modules/lots (favorites, reports, passe UX, écrans auth), Codex CLI indisponible (quota gratuit épuisé jusqu'au 30/09/2026), Cline CLI mentionné par l'utilisateur mais pas encore essayé. Ce fichier `PROJECT_MEMORY.md` créé à la demande explicite de l'utilisateur à la fin de cette session.
+
+---
+
+## 12. Phase 2 (à partir du 2026-09-06 19:20) — Vision produit, analyse et roadmap au-delà du MVP
+
+**Directive de l'utilisateur** : le MVP étant terminé, la session passe à une phase d'amélioration produit profonde et auto-dirigée — analyse complète du produit, recherche marché/UX/contexte ivoirien réelle, priorisation autonome, implémentation par cycles (observer → rechercher → réfléchir → prioriser → concevoir → implémenter → tester → documenter, en boucle), sans attendre de liste de fonctionnalités de la part de l'utilisateur. Escalade réservée aux choix produit réellement stratégiques.
+
+### 12.1 Analyse à froid du produit actuel (limites identifiées, même sur ce qui "fonctionne")
+
+- **Aucune recherche par nom.** Le backend n'expose que `findNearby` (géospatial) et `findById` — zéro endpoint de recherche textuelle sur `Stop.name` ou les lignes. Le seul moyen de trouver un arrêt est de le repérer visuellement sur la carte et de cliquer son marqueur. C'est l'écart n°1 face à n'importe quelle application de référence (Citymapper/Google Maps/Moovit sont toutes "destination-first" : on tape où on veut aller, la carte suit). Un utilisateur qui connaît le nom de sa destination ("Adjamé Gare") mais pas sa position sur la carte est aujourd'hui bloqué.
+- **Écart stratégique le plus important : l'itinéraire ne "prend jamais le gbaka".** `useRoute`/`/api/route` interroge OpenRouteService en point-à-point (marche/vélo/voiture) vers UN SEUL arrêt sélectionné. Le graphe GTFS réel (3 820 arrêts, 391 lignes, correspondances) importé depuis le début du projet n'est **jamais utilisé pour du calcul d'itinéraire** — seulement pour l'affichage sur la carte. Autrement dit, l'application sait où sont les gbaka/woro-woro mais ne dit jamais "prends la ligne 15 jusqu'à Gare Sud, puis change pour la 37" — qui est pourtant la raison d'être du produit. C'est la plus grosse opportunité produit identifiée cette phase (voir 12.3, priorité P0 mais gros chantier, séquencé sur plusieurs cycles).
+- **Aucune mémoire de session au-delà des favoris explicites.** Pas de "récemment consultés", pas de suggestion basée sur l'usage réel — chaque session repart de zéro.
+- **Aucune tolérance à la connectivité faible/instable**, alors que c'est un scénario explicitement visé (§7 mobile-first) : décision documentée de ne jamais mettre en cache `/api/*` (voir `vite.config.ts`) — cohérente pour éviter des données géospatiales périmées à l'échelle d'une ville, mais rien ne compense pour l'usage hors-ligne ponctuel (relire les infos d'un arrêt déjà visité sans réseau).
+- **Tarifs toujours `null`** (déjà documenté §9) — mais maintenant des chiffres réels et datés existent (voir 12.2) pour au moins amorcer un affichage utile.
+- **Pas de signal de confiance sur les signalements communautaires** avant modération admin — un report reste "En attente" sans aucun retour à la communauté (ex. "3 autres personnes ont signalé la même chose"), alors que c'est un mécanisme qui a fait ses preuves ailleurs (Waze) pour construire la confiance avant même la modération humaine.
+- **Aucun onboarding.** Un nouveau visiteur atterrit directement sur la carte avec une demande de géolocalisation, sans un mot sur ce que l'app permet de faire (favoris, itinéraire, signalement) — pour une audience qui, selon les usages réels observés (12.2), navigue majoritairement de bouche-à-oreille et à l'instinct plutôt qu'avec des apps de transport occidentales.
+- **Aucun filtre sur les types d'arrêt affichés** — un utilisateur qui cherche spécifiquement une station de woro-woro voit toujours tous les types mélangés sur la carte, avec seulement une légende passive.
+
+### 12.2 Recherche réelle effectuée (2026-09-06 19:20, sources citées)
+
+**Paysage concurrentiel** : [Gozem](https://gozem.co/bj/en/) — "super-app" de mobilité ouest-africaine (moto-taxi, taxi, livraison), déjà présente au Bénin/Togo/Cameroun — **prévoit son lancement en Côte d'Ivoire fin 2026** ([Ecofin](https://www.agenceecofin.com/finance/1001-72636-la-start-up-gozem-va-etendre-son-offre-de-reservation-en-ligne-de-moyens-de-transports-a-neuf-nouveaux-marches)). Yango et Heetch opèrent déjà à Abidjan (VTC, prix 2 500-4 500 F selon l'heure). **Conséquence produit** : GbakaMap ne doit pas chercher à concurrencer ces VTC premium (réservation de véhicule à la demande) — son terrain reste le transport informel fixe (gbaka/woro-woro/bus), un angle que ni Gozem ni Yango ne couvrent (ils réservent un véhicule dédié, pas n'aident à utiliser un réseau de lignes existant). C'est une différenciation claire à assumer, pas à estomper.
+
+**Tarifs réels 2026** (source : [budgetabidjan.com, mai 2026](https://www.budgetabidjan.com/2026/05/prix-transport-abidjan-2026-budget-reel.html)) : trajet-type Cocody→Plateau — wôrô-wôrô+gbaka combinés ≈ 1 000 F/trajet (500+500), SOTRA bus 200-500 F/ticket, SOTRA bateau-bus 150-500 F, moto-taxi 700-1 500 F, Yango 2 500-4 500 F. Chiffres exploitables comme ordre de grandeur affiché (pas une facturation réelle, un repère budgétaire).
+
+**Plaintes réelles usagers gbaka/woro-woro** (sources : [Fratmat](https://www.fratmat.info/article/232866/economie/transport-urbainbus-gbaka-woro-woro-le-calvaire-quotidien-des-usagers-reportage), [Abidjan.net](https://news.abidjan.net/articles/580327/gbaka-woro-woro-hiace-gnambro-solutions-des-syndicalistes-usagers-et-de-ladministration), [Le Mandat Express](https://www.lemandatexpress.net/2026/05/21/tolerance-zero-sur-les-routes-dabagou-bavettes-genantes-gbaka-et-woro-woro-bientot-dans-le-viseur/)) : surcharge et longues attentes aux gares/stations, anarchie du stationnement (blocage de la circulation), incivisme de conduite, véhicules sans plaque réglementaire ou accessoires dangereux ("dabagou", bavettes traînantes), inquiétude réelle sur les délits de fuite et l'absence d'assurance en cas d'accident. **Conséquence produit** : (a) le temps d'attente réel à un arrêt est une vraie douleur mesurable — opportunité de signalement communautaire léger ("temps d'attente observé"), pas de promesse de données que l'app n'a pas ; (b) les questions d'assurance/responsabilité en cas d'accident relèvent du juridique, **hors périmètre produit** — ne jamais laisser entendre que l'app garantit une quelconque sécurité ou couverture.
+
+**UX transport/offline** (sources : [Moovit blog 2026](https://moovit.com/blog/beyond-the-signal-a-tourists-guide-to-reliable-public-transport-navigation-in-2026/), [LeanCode](https://leancode.co/blog/offline-mobile-app-design)) : les meilleures pratiques confirment (a) mettre les trajets/arrêts fréquents en favoris pour un accès instantané sans repasser par une recherche, (b) mettre en cache les données statiques (topologie GTFS) pour un usage dégradé hors-ligne plutôt que de tout bloquer sans réseau, (c) charger l'essentiel en premier (progressive loading) — un utilisateur mobile abandonne largement au-delà de quelques secondes de chargement.
+
+### 12.3 Roadmap priorisée (P0 = valeur/impact le plus élevé, pas nécessairement le plus urgent à livrer en premier — le séquencement réel tient aussi compte de l'effort)
+
+**P0 — differenciateur stratégique, gros chantier, plusieurs cycles** :
+- *Planificateur de trajet multi-modal réel* (marche → arrêt A → ligne X → [correspondance ligne Y] → arrêt B → marche) en s'appuyant sur le graphe GTFS déjà importé (arrêts partageant une ligne, recherche de plus court chemin en nombre de correspondances puis distance). C'est la fonctionnalité qui ferait de GbakaMap un vrai planificateur de transport informel plutôt qu'un annuaire d'arrêts + calculateur d'itinéraire piéton/voiture. Nécessite : modélisation des séquences d'arrêts par ligne (déjà dans le GTFS source, à vérifier si conservé en base), un algorithme de recherche de trajet (Dijkstra/RAPTOR simplifié suffit à l'échelle de 391 lignes), une UI de résultat multi-étapes. **Ne pas se lancer sans une conception dédiée** (prochain cycle) — trop gros pour une implémentation "directe".
+
+**P1 — gains rapides, forte valeur, effort contenu (à livrer ce cycle-ci et les suivants immédiats)** :
+1. Recherche textuelle des arrêts (nom d'arrêt, nom de ligne) — corrige l'écart UX le plus visible immédiatement, prérequis naturel du futur planificateur multi-modal.
+2. Estimation de coût de trajet (tarifs indicatifs par mode, à partir des chiffres 12.2), affichée à côté du résultat d'itinéraire existant.
+3. Filtre par type d'arrêt sur la carte (gbaka/woro-woro/bus/taxi/moto-taxi) — la légende existe déjà visuellement, la rendre interactive.
+4. Onboarding minimal (un premier écran ou une infobulle contextuelle au premier lancement, pas un tunnel de slides) expliquant favoris/itinéraire/signalement.
+
+**P2 — valeur réelle mais effort/risque plus élevé, à concevoir avant d'implémenter** :
+5. Cache offline des données déjà consultées (arrêts/lignes vus récemment) via IndexedDB/Workbox runtime caching, pour un usage dégradé sans réseau — distinct de la décision existante de ne jamais cacher aveuglément `/api/*` : cache ciblé et explicite, pas un cache générique.
+6. Signal de confiance léger sur les signalements ("N personnes ont signalé un problème similaire") avant modération.
+7. Historique des trajets récents (pas seulement les favoris explicites).
+8. Temps d'attente observé à un arrêt (signalement communautaire dédié, extension du système de reports existant).
+
+**Écarté explicitement** (cohérent avec §5bis, confirmé par cette recherche) : concurrencer les VTC (Gozem/Yango/Heetch) sur la réservation de véhicule à la demande — hors du terrain choisi (transport informel fixe) ; toute fonctionnalité impliquant une garantie de sécurité/assurance (relève du juridique, pas du produit).
+
+### 12.4 Premier cycle engagé
+
+Item P1.1 (recherche textuelle des arrêts) choisi comme premier livrable de cette phase : plus haut ratio valeur/effort, prérequis du futur planificateur (P0), corrige la lacune la plus visible dès la première utilisation. Voir §6 pour le commit correspondant une fois livré.
