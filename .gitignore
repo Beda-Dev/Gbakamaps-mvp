@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# build outputs
+dist/
+build/
+backend/dist/
+frontend/dist/
+
+# prisma
+backend/src/generated/
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+
+# docker volumes are named volumes, not bind-mounted, so nothing to ignore here
+
+# typescript
+*.tsbuildinfo

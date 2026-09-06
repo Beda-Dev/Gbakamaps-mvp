@@ -1,0 +1,209 @@
+// =============================================================================
+// Schéma repris et adapté de l'ancien projet (le schéma était le meilleur
+// artefact de l'audit — contraintes, cascades et index corrects).
+// Changements par rapport à l'ancien projet :
+//   - User.id devient un identifiant généré par nous (auth maison, plus de
+//     Firebase UID) + ajout du hash de mot de passe et d'une table Session
+//   - Stop.source distingue les arrêts importés d'OSM des arrêts créés par
+//     la communauté (corrige le bug osmId=BigInt(Date.now()) de l'ancien code)
+//   - OfflineZone retirée du MVP (fonctionnalité reportée en V2/V3, cf. audit)
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// AUTHENTIFICATION (gérée nous-mêmes — sessions opaques, pas de JWT client)
+// -----------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String?
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions  Session[]
+  favorites Favorite[]
+  reports   Report[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// Sessions opaques stockées en base — permet la révocation immédiate
+// (contrairement à un JWT auto-suffisant), cf. décision d'architecture.
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// -----------------------------------------------------------------------------
+// DONNÉES MÉTIER
+// -----------------------------------------------------------------------------
+
+model Stop {
+  id       String   @id @default(uuid())
+  name     String?
+  lat      Float
+  lon      Float
+  stopType StopType @default(BUS_STOP)
+
+  // Origine de la donnée : import batch OSM ou création communautaire.
+  // Corrige l'ancien pipeline qui mélangeait les deux sans distinction claire.
+  source     StopSource @default(COMMUNITY)
+  osmId      BigInt?    @unique // uniquement renseigné si source = OSM
+
+  // Tags enrichis
+  shelter    Boolean? @default(false)
+  bench      Boolean? @default(false)
+  wheelchair Boolean? @default(false)
+
+  // Tags spécifiques transport informel ivoirien
+  gbaka    Boolean? @default(false)
+  woroworo Boolean? @default(false)
+  taxi     Boolean? @default(false)
+  mototaxi Boolean? @default(false)
+
+  verified    Boolean  @default(false)
+  lastUpdated DateTime @default(now())
+
+  favorites Favorite[]
+  reports   Report[]
+  stopLines StopLine[]
+
+  @@index([lat, lon])
+  @@map("stops")
+}
+
+enum StopSource {
+  OSM
+  COMMUNITY
+}
+
+enum StopType {
+  BUS_STOP
+  GBAKA_STOP
+  WORO_WORO_STOP
+  TAXI_STAND
+  MOTO_TAXI_STAND
+  PLATFORM
+  STATION
+}
+
+model TransportLine {
+  id            String        @id @default(uuid())
+  name          String
+  shortName     String?
+  color         String?       @default("#0A9396")
+  transportType TransportType
+  operator      String?
+  fare          Float?
+  active        Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stopLines StopLine[]
+
+  @@map("transport_lines")
+}
+
+enum TransportType {
+  BUS
+  GBAKA
+  WORO_WORO
+  TAXI
+  MOTO_TAXI
+}
+
+model StopLine {
+  id        String  @id @default(uuid())
+  stopId    String
+  lineId    String
+  sequence  Int?
+  direction String?
+
+  stop Stop          @relation(fields: [stopId], references: [id], onDelete: Cascade)
+  line TransportLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([stopId, lineId])
+  @@map("stop_lines")
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  stopId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stop Stop @relation(fields: [stopId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stopId])
+  @@map("favorites")
+}
+
+model Report {
+  id          String       @id @default(uuid())
+  userId      String
+  stopId      String?
+  reportType  ReportType
+  title       String
+  description String?
+  imageUrl    String?
+  lat         Float?
+  lon         Float?
+  status      ReportStatus @default(PENDING)
+  moderatedBy String?
+  moderatedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stop Stop? @relation(fields: [stopId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+enum ReportType {
+  MISSING_STOP
+  INCORRECT_INFO
+  DAMAGE
+  SAFETY_ISSUE
+  NEW_LINE
+  SCHEDULE_CHANGE
+  DUPLICATE_STOP
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RESOLVED
+}
