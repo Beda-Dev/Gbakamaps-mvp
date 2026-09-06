@@ -2,7 +2,7 @@
 
 > **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
 
-Dernière mise à jour : **2026-09-06 19:20**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+Dernière mise à jour : **2026-09-06 20:45**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
 
 **Règle adoptée pendant cette session (2026-09-06 17:05), à appliquer systématiquement** : avant d'adopter tout nouvel outil/service externe dans ce projet (librairie, API tierce, etc.), faire une recherche réelle (web + test empirique si possible) sur sa fiabilité/ses limites plutôt que de se fier à sa réputation ou sa documentation seule — c'est exactement ce qui a révélé qu'OSRM ne distinguait pas ses profils malgré ce qu'affirme sa propre doc (voir §4).
 
@@ -340,6 +340,9 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 18:55 | `0c44855` | Écran de modération admin (`/admin/reports`), délégué à OpenCode | 35/35 tests, vérification indépendante complète (tsc/vitest/build + test navigateur réel Playwright couvrant anonyme/non-admin/admin avec un vrai compte promu ADMIN en SQL, création+approbation réelle d'un signalement via l'UI, mobile vérifié) — **zéro bug trouvé**, tous les écrans MVP haute priorité (§9) sont désormais terminés |
 | 2026-09-06 19:00 | `96b1f3a` | "Suivre mon trajet" (`useLiveTracking.ts` + intégration panneau itinéraire), délégué à OpenCode | 47/47 tests, vérification indépendante complète (tsc/vitest/build + **simulation GPS réelle en navigateur** via `context.setGeolocation()` sur 6 points interpolés vers un arrêt réel : distance décroissante affichée correctement, alerte d'approche puis d'arrivée au bon moment, arrêt automatique du suivi confirmé) — **zéro bug trouvé**, différenciateur §5bis terminé |
 | 2026-09-06 19:15 | `90e5f15` | Suite Playwright e2e committée (`frontend/e2e/critical-path.spec.ts`), délégué à OpenCode (1er essai avorté, retenté avec succès) | Parcours complet (inscription→carte→favori→itinéraire→signalement→déconnexion) contre les vrais services, zéro mock ; relancé indépendamment par mes soins (pas seulement le rapport de l'agent) → vert (~31s) ; comble la lacune "aucun test e2e committé" documentée depuis le début du projet |
+| 2026-09-06 20:00 | `d7ee3cc` | Recherche textuelle des arrêts (`/api/stops/search`, `useStopSearch`, `StopSearchBar`), écrit directement | Backend 61/61, frontend 53/53, vérifié en navigateur réel (recherche→dropdown→sélection→recentrage), premier livrable de la phase 2 "au-delà du MVP" (§12) |
+| 2026-09-06 20:15 | `9591a23` | Chaîne de secours routing (ORS clé 1→clé 2→GraphHopper), écrit directement | 64/64 tests backend, bug réel trouvé et corrigé en cours de route (Docker transmet une chaîne vide pour une variable `environment:` non définie, `env.ts` la traitait comme invalide plutôt qu'absente) |
+| 2026-09-06 20:30 | `97f6b3e` | Chaîne de secours carte (MapTiler clé 1→clé 2→OSM), écrit directement | Vérifié en navigateur réel avec deux serveurs de dev temporaires et des clés invalides forcées — bascule confirmée par les requêtes réseau réelles à chaque palier (clé 2, puis OSM) |
 
 ---
 
@@ -403,11 +406,14 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 - **Deux `.env` différents pour la DB** (racine = hostname Docker `db`, `backend/.env` = `localhost:5433`) — voir §3.
 - **`VITE_API_URL=/api`** nécessite le proxy Vite configuré dans `vite.config.ts` ET une règle équivalente côté reverse proxy en production — ne jamais oublier cette dépendance en déployant.
 - **`docker compose up -d` seul ne recharge PAS les variables d'environnement d'un conteneur déjà créé** — utiliser `--force-recreate` après toute modification de `.env` qui doit prendre effet immédiatement, et vérifier avec `docker compose exec <service> printenv <VAR>`.
+- **Une variable optionnelle listée dans `docker-compose.yml` (`environment:`) mais absente du `.env` arrive comme une CHAÎNE VIDE `""`, pas comme absente** — un schéma Zod `z.string().min(1).optional()` la rejette (présente mais invalide) au lieu de la traiter comme absente. Utiliser une fonction de normalisation (`optionalNonEmpty()` dans `env.ts`) qui convertit `""` en `undefined` avant validation. Rencontré et corrigé le 2026-09-06 (§5, §12.5).
+- **Clés de secours (ORS, MapTiler) à ajouter aux DEUX `.env`** si elles doivent être actives à la fois en local (`backend/.env`/`frontend/.env`) ET dans le conteneur Docker (`.env` racine, lu par `docker-compose.yml`) — piège déjà connu (voir ligne ci-dessus sur les deux `.env`), reconfirmé concrètement avec `ORS_API_KEY_2`.
 
 ### Erreurs déjà rencontrées à ne pas reproduire
-- Ne jamais `taskkill` un PID trouvé par scan de port sans vérifier son nom de process au préalable.
+- Ne jamais `taskkill` un PID trouvé par scan de port sans vérifier son nom de process au préalable — utiliser `Get-NetTCPConnection` + `Get-CimInstance Win32_Process` (PowerShell) pour confirmer le PID réel derrière un port avant tout arrêt, surtout si plusieurs serveurs de test tournent sur des ports proches (un conflit de port peut faire dévier un serveur vers un port différent de celui demandé).
 - Ne jamais considérer `tsc --noEmit` + `vite build` verts comme une preuve qu'une app frontend fonctionne réellement — toujours vérifier en navigateur réel (idéalement piloté, avec captures) avant de déclarer un travail terminé.
 - Ne jamais supposer qu'un `.env` correct implique que le conteneur Docker en cours d'exécution le reflète.
+- Ne jamais faire confiance au rapport final d'un agent délégué (OpenCode/Cline) sans vérifier qu'il a réellement produit les fichiers attendus (`git status --short`) — un `exit code 0` ne prouve rien si l'agent a été bloqué en cours de route (ex. permission refusée) et s'est arrêté silencieusement sans finir.
 
 ---
 
@@ -427,14 +433,24 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 - **Sécurité (audit `npm audit` fait le 2026-09-06 18:35)** : backend a 3 vulnérabilités "high" via `deepmerge-ts` (dépendance transitive de `@prisma/config`, utilisée par la CLI `prisma`, une devDependency). Risque réel jugé faible : ce code n'est jamais exécuté par `node dist/server.js` (le process qui tourne réellement), seulement si quelqu'un invoquait `npx prisma` avec une configuration malveillante — pas un vecteur d'attaque réseau. **Cause racine** : le `Dockerfile` fait `npm install` sans `--omit=dev` dans le build final, donc les devDependencies (dont `prisma` CLI) finissent dans l'image de production. Correctif simple rejeté pour l'instant : `npm audit fix --force` imposerait un downgrade Prisma cassant. Correctif propre (séparer un stage `prod-deps` avec `--omit=dev`) **reporté** car il casserait la commande pratique `docker compose exec backend npm run import:gtfs` (utilise `tsx`, une devDependency) sans plan de remplacement immédiat. Frontend : 0 vulnérabilité.
 - ~~"Suivre mon trajet"~~ ✅ fait (commit `96b1f3a`) — voir §5bis
 - ~~Tests d'intégration end-to-end front+back~~ ✅ fait (commit `90e5f15`) — 1 parcours critique complet contre les vrais services ; pourrait être étendu (modération admin, suivi GPS) mais couvre déjà le chemin utilisateur le plus courant
+- ~~Recherche textuelle des arrêts~~ ✅ fait (commit `d7ee3cc`) — voir §12.4
+- ~~Chaîne de secours routing (ORS clé 1→clé 2→GraphHopper)~~ ✅ fait (commit `9591a23`) — voir §12.5
+- ~~Chaîne de secours carte (MapTiler clé 1→clé 2→OSM)~~ ✅ fait (commit `97f6b3e`) — voir §12.5
 - Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir
 - Affichage des tarifs (`TransportLine.fare`) — actuellement toujours `null` (le GTFS JungleBus ne les fournit pas) ; des données réelles existent publiquement (ex. budgetabidjan.com, trouvé pendant la recherche §5bis) — à évaluer comme source d'enrichissement manuel ou via signalements communautaires
 - Accessibilité : audit systématique (contrastes, navigation clavier, lecteurs d'écran) — pas encore fait au-delà des `aria-label`/`role` ajoutés au fil de l'eau
+- Estimation de coût de trajet (tarifs indicatifs par mode, données réelles 2026 déjà collectées §12.2) — affichage à côté du résultat d'itinéraire existant
+- Filtre interactif par type d'arrêt sur la carte (la légende existe déjà visuellement, la rendre cliquable)
+- Onboarding minimal pour un nouveau visiteur (favoris/itinéraire/signalement expliqués en un coup d'œil)
+
+### 🔵 Différenciateur stratégique (gros chantier, plusieurs cycles — voir §12.3 P0)
+- Planificateur de trajet multi-modal réel s'appuyant sur le graphe GTFS (marche→arrêt→ligne→[correspondance]→arrêt→marche) — l'écart produit le plus important identifié en phase 2 : l'app affiche les lignes gbaka/woro-woro mais ne les utilise jamais pour calculer un itinéraire. Nécessite une conception dédiée avant implémentation. L'API Matrix d'ORS (§12.6) accélérerait ce chantier.
 
 ### 🟢 Priorité faible
 - WebSocket/realtime pour la modération (design esquissé en §4, non implémenté)
 - CI/CD (délibérément non prioritaire tant que le MVP n'est pas stabilisé) — la suite e2e (§9 ci-dessus) est prête à y être branchée le jour venu (même prérequis `docker compose up -d` + `npm run dev`)
 - Réexaminer le choix ORS si un jour une instance auto-hébergée devient pertinente au volume du projet
+- Isochrones et geocoding ORS (§12.6) — pistes identifiées, pas encore de design produit
 
 ### Explicitement écarté (limite honnête, pas un oubli — voir §5bis)
 - Position live des véhicules gbaka/woro-woro (aucune source de données, aucune ne semble exister)
@@ -449,7 +465,11 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 Ordre exécuté : (1) écran itinéraire ✅, (2) écran signalements ✅, (3) écran modération admin ✅, (4) "Suivre mon trajet" ✅ (2026-09-06 19:00) — **le périmètre MVP haute priorité ET le différenciateur validé par la recherche produit sont tous les deux terminés**. Les deux derniers lots (modération admin, suivi GPS) n'ont révélé aucun bug, ce qui valide que les patterns établis (flex-wrap sans position:absolute, hooks dédiés par domaine, clearWatch systématique) préviennent désormais les classes de bugs déjà rencontrées deux fois chacune en début de projet (voir §5).
 
-Le test e2e critique (2026-09-06 19:15, commit `90e5f15`) clôt la dernière lacune de couverture répétée dans ce fichier. **Prochaine étape à engager** : items 🟠/🟢 restants de §9, dans l'ordre de valeur perçue : (a) accessibilité (audit systématique, pas seulement ad hoc), (b) code-splitting si le bundle continue de grossir (actuellement ~1,35 Mo), (c) tarifs des lignes (source externe à évaluer). Aucune de ces tâches n'est bloquante ni risquée — à enchaîner en mode autonome selon le même protocole (délégation ciblée si pertinent, vérification indépendante systématique — y compris re-vérifier qu'un agent délégué a bien produit des fichiers avant de lire son rapport, voir §5 — navigateur réel avant de déclarer terminé).
+Le test e2e critique (2026-09-06 19:15, commit `90e5f15`) clôt la dernière lacune de couverture répétée dans ce fichier.
+
+**Phase 2 engagée (§12)** : recherche produit réelle effectuée (analyse à froid du produit + recherche marché/UX/contexte ivoirien avec sources), roadmap priorisée P0/P1/P2 écrite. Premier cycle livré le 2026-09-06 20:00-20:45 : recherche textuelle des arrêts (P1.1, commit `d7ee3cc`), puis — suite à une demande explicite de l'utilisateur après un incident réel de rate-limit ORS pendant les tests — chaînes de secours multi-fournisseurs pour le routing (commit `9591a23`) et la carte (commit `97f6b3e`), toutes deux vérifiées en conditions réelles (voir §12.5).
+
+**Prochaine étape à engager** : items 🟠/🔵/🟢 restants de §9. Recommandation de priorisation : (a) accessibilité et code-splitting (gains rapides, effort contenu) avant (b) le planificateur multi-modal (🔵, différenciateur stratégique mais gros chantier nécessitant une conception dédiée en amont — ne pas se lancer directement dans l'implémentation). Aucune de ces tâches n'est bloquante ni risquée — à enchaîner en mode autonome selon le même protocole (délégation ciblée si pertinent, vérification indépendante systématique — y compris re-vérifier qu'un agent délégué a bien produit des fichiers avant de lire son rapport, voir §5 — navigateur réel avant de déclarer terminé).
 
 ---
 
@@ -505,6 +525,37 @@ Audit complet de l'ancien projet `GbakaMaps` (score 3,1/10, voir §7), décision
 
 **Écarté explicitement** (cohérent avec §5bis, confirmé par cette recherche) : concurrencer les VTC (Gozem/Yango/Heetch) sur la réservation de véhicule à la demande — hors du terrain choisi (transport informel fixe) ; toute fonctionnalité impliquant une garantie de sécurité/assurance (relève du juridique, pas du produit).
 
-### 12.4 Premier cycle engagé
+### 12.4 Premier cycle engagé — ✅ recherche textuelle des arrêts (P1.1)
 
-Item P1.1 (recherche textuelle des arrêts) choisi comme premier livrable de cette phase : plus haut ratio valeur/effort, prérequis du futur planificateur (P0), corrige la lacune la plus visible dès la première utilisation. Voir §6 pour le commit correspondant une fois livré.
+Item P1.1 livré (2026-09-06 20:00, commit `d7ee3cc`) : plus haut ratio valeur/effort, prérequis du futur planificateur (P0), corrige la lacune la plus visible dès la première utilisation. `GET /api/stops/search`, hook `useStopSearch` (debounce), composant `StopSearchBar` en overlay flottant. Vérifié en navigateur réel (recherche → dropdown → sélection → recentrage + panneau détail), desktop et mobile, aucun chevauchement avec les autres contrôles de carte.
+
+### 12.5 Résilience réseau — chaînes de secours multi-fournisseurs (2026-09-06 20:00-20:45)
+
+**Déclencheur** : pendant la vérification de la recherche textuelle, la suite e2e a échoué 3 fois de suite sur l'étape itinéraire avec "Service de calcul d'itinéraire indisponible" (`fetch failed`), alors que des appels `curl` isolés juste après réussissaient systématiquement. Diagnostic : limite de débit ORS **par minute** (pas un incident, pas le quota journalier) déclenchée par mes propres tests automatisés répétés en rafale. L'utilisateur a alors demandé explicitement un système de secours généralisé à toutes les ressources externes du projet, pour qu'aucune ne puisse jamais bloquer l'application.
+
+**Implémenté** :
+- **Routing** (commit `9591a23`) : `ORS_API_KEY` → `ORS_API_KEY_2` (si configurée) → GraphHopper (si `GRAPHHOPPER_API_KEY` configurée) → erreur claire agrégée. GraphHopper choisi après recherche réelle (voir §12.6) car il distingue réellement les profils voiture/vélo/marche — OSRM démo, lui, reste explicitement écarté même comme dernier recours malgré sa disponibilité sans clé : un résultat rapide mais trompeur est pire qu'un échec honnête, principe déjà établi lors du remplacement initial d'OSRM (§4).
+- **Carte** (commit `97f6b3e`) : `VITE_MAPTILER_KEY` → `VITE_MAPTILER_KEY_2` (si configurée) → repli OSM déjà existant. Bascule déclenchée par un vrai événement d'échec MapLibre (`AJAXError` ciblant `api.maptiler.com`), jamais par supposition.
+- **GTFS** : aucun changement — c'est un script d'import batch hors ligne, jamais dans le chemin d'une requête utilisateur (décision déjà documentée §3), donc pas concerné par un besoin de repli en direct.
+
+**Bug réel trouvé et corrigé pendant l'implémentation** : Docker Compose transmet une variable listée dans `environment:` du service comme une **chaîne vide** quand elle est absente du `.env` ("Defaulting to a blank string"), pas comme une variable absente. Le conteneur backend est entré en crash-loop dès l'ajout de `GRAPHHOPPER_API_KEY` à `docker-compose.yml` sans valeur dans `.env` racine (`z.string().min(1).optional()` rejette `""` comme "présente mais invalide" au lieu de la traiter comme absente). Corrigé par une fonction `optionalNonEmpty()` dans `env.ts` qui normalise `""` en `undefined` avant validation — testé (`backend/tests/env.test.ts`, 3 tests).
+
+**Autre piège rencontré (déjà connu, reconfirmé)** : `ORS_API_KEY_2` ajoutée par l'utilisateur dans `backend/.env` (utilisé par `npm run dev`/tests locaux) ne suffisait pas à activer le repli dans le conteneur Docker — `docker-compose.yml` lit le `.env` **racine**, pas `backend/.env` (piège déjà documenté §8, reconfirmé ici en pratique). La clé a dû être ajoutée aux deux fichiers.
+
+**Vérification réelle** (pas seulement lecture de code) : 64/64 tests backend (dont les nouveaux tests de repli et de régression `""`), conteneur Docker reconstruit et confirmé stable (`docker compose ps`, plusieurs vérifications espacées dans le temps — ne redémarre plus en boucle), itinéraire réel fonctionnel après reconstruction. Côté carte : **deux serveurs de dev temporaires lancés avec des clés MapTiler invalides forcées** pour observer la bascule en conditions réelles — (1) clé 1 invalide + clé 2 valide → bascule confirmée par les requêtes réseau réelles vers MapTiler (changement de clé visible), carte intacte, 100 marqueurs rendus ; (2) les deux clés invalides → repli OSM confirmé visuellement (captures d'écran), sélecteur de style disparu comme attendu. Suite e2e re-testée après coup : verte (1m10s, contre les vrais services).
+
+**Leçon opérationnelle ajoutée** : avant tout `taskkill`/arrêt de process lancé pour un test temporaire (ici deux serveurs Vite sur des ports alternatifs), toujours vérifier le PID réel via `Get-NetTCPConnection` + `Get-CimInstance Win32_Process` (PowerShell) plutôt que de faire confiance à l'ordre de lancement des commandes — un conflit de port peut faire dévier un serveur vers un port différent de celui demandé (`--port 5175` s'est retrouvé sur 5176 car 5175 était déjà pris par un serveur de test précédent), et un `pkill`/`taskkill` par port supposé peut viser le mauvais process. Cohérent avec la règle déjà établie après l'incident Docker Desktop (§5).
+
+### 12.6 Recherche réelle effectuée (2026-09-06 20:35) — API OpenRouteService, capacités au-delà du routage point-à-point
+
+Sources : [documentation officielle openrouteservice.org/services](https://openrouteservice.org/services/), [référence endpoints GIScience](https://giscience.github.io/openrouteservice/api-reference/endpoints/).
+
+**Services disponibles chez ORS au-delà de `/v2/directions/` (déjà utilisé)** : Isochrones (zone atteignable en X minutes/km depuis un point), Matrix (temps/distance entre plusieurs origines et destinations en un seul appel), Geocoding/autocomplete (via Pelias), POI (points d'intérêt), Elevation.
+
+**Opportunités produit identifiées, pas encore implémentées** :
+- **Matrix** : pertinence directe pour le futur planificateur multi-modal (P0, §12.3) — au lieu d'appeler `/directions` une fois par arrêt candidat pour trouver le plus proche accessible à pied, un seul appel Matrix donne la distance/durée de marche vers TOUS les arrêts proches d'un coup. Réduirait aussi la consommation de quota (moins d'appels) — pertinent après l'incident de rate-limit de cette session.
+- **Isochrones** : différenciateur UX plausible ("tout ce qui est accessible en 15 min à pied/en gbaka depuis chez moi") — pas dans le périmètre GTFS actuel (topologie de lignes, pas de calcul de zone), mais complémentaire.
+- **Geocoding** : notre recherche actuelle (§12.4) ne trouve que des arrêts/lignes connus de la base, pas une adresse quelconque ("Rue X, Cocody"). Pourrait compléter `StopSearchBar` pour permettre un point de départ/arrivée libre, pas seulement un arrêt.
+- **Elevation** : peu pertinent pour Abidjan (relief globalement plat en zone urbaine) — écarté.
+
+**Statut** : recherche faite, aucune implémentation pour l'instant — ces pistes rejoignent la roadmap §12.3 (P0/P2) plutôt que d'être ajoutées de façon ad hoc.
