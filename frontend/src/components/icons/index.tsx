@@ -160,3 +160,14 @@ export function NavigationIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// Icône recherche (barre de recherche d'arrêts, phase 2), copiée depuis
+// https://lucide.dev/icons/search, même licence ISC (voir LICENSES-ICONS.md).
+export function SearchIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  );
+}

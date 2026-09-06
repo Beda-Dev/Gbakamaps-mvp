@@ -6,10 +6,19 @@
 // n'exigeait aucune authentification.
 // =============================================================================
 import type { FastifyInstance } from 'fastify';
-import { nearbyStopsQuerySchema, stopIdParamsSchema } from './stops.schemas.js';
-import { findById, findNearby } from './stops.service.js';
+import { nearbyStopsQuerySchema, searchStopsQuerySchema, stopIdParamsSchema } from './stops.schemas.js';
+import { findById, findNearby, searchStops } from './stops.service.js';
 
 export async function stopsRoutes(app: FastifyInstance) {
+  // Recherche textuelle (nom d'arrêt ou de ligne) — écart UX comblé en
+  // phase 2 (PROJECT_MEMORY.md §12) : jusqu'ici seule la proximité
+  // géographique permettait de trouver un arrêt.
+  app.get('/stops/search', async (request, reply) => {
+    const query = searchStopsQuerySchema.parse(request.query);
+    const stops = await searchStops({ query: query.q, limit: query.limit, near: query.near });
+    return reply.send({ success: true, data: { stops, count: stops.length } });
+  });
+
   app.get('/stops/nearby', async (request, reply) => {
     const query = nearbyStopsQuerySchema.parse(request.query);
 

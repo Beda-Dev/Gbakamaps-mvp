@@ -144,4 +144,66 @@ describe('stops module', () => {
     const res = await app.inject({ method: 'GET', url: '/api/stops/pas-un-uuid' });
     expect(res.statusCode).toBe(400);
   });
+
+  describe('recherche textuelle (GET /stops/search)', () => {
+    it("trouve un arrêt par une partie de son nom, insensible à la casse", async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/stops/search?q=adjamé marché' });
+      expect(res.statusCode).toBe(200);
+      const ids = res.json().data.stops.map((s: { id: string }) => s.id);
+      expect(ids).toContain(stopBId);
+      expect(ids).not.toContain(stopCId);
+    });
+
+    it('avec near=lat,lon, trie les résultats par distance à ce point', async () => {
+      // A et B correspondent tous deux à "adjamé" ; en partant de B, B doit
+      // être plus proche que A dans le tri (0m vs ~157m).
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/stops/search?q=adjamé&near=${pointB.lat},${pointB.lon}`,
+      });
+      expect(res.statusCode).toBe(200);
+      const stops = res.json().data.stops as { id: string; distanceMeters: number | null }[];
+      const indexB = stops.findIndex((s) => s.id === stopBId);
+      const indexA = stops.findIndex((s) => s.id === stopAId);
+      expect(indexB).toBeGreaterThanOrEqual(0);
+      expect(indexA).toBeGreaterThanOrEqual(0);
+      expect(indexB).toBeLessThan(indexA);
+      expect(stops[indexB].distanceMeters).toBeLessThan(5);
+    });
+
+    it('sans near, distanceMeters est null (pas de position de référence)', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/stops/search?q=adjamé' });
+      const stops = res.json().data.stops as { distanceMeters: number | null }[];
+      expect(stops.every((s) => s.distanceMeters === null)).toBe(true);
+    });
+
+    it('aucune correspondance renvoie une liste vide (pas une erreur)', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/stops/search?q=xyzInexistantAbidjan123',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.stops).toEqual([]);
+    });
+
+    it("refuse une recherche trop courte (1 caractère) — 400", async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/stops/search?q=a' });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('refuse un format near invalide (400)', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/stops/search?q=adjamé&near=pas-des-coordonnées',
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('/stops/search ne collisionne pas avec la route paramétrée /stops/:id', async () => {
+      // "search" n'est pas un UUID valide : si le routeur matchait /stops/:id
+      // en premier, ce serait un 400 (id mal formé) plutôt qu'un vrai résultat.
+      const res = await app.inject({ method: 'GET', url: '/api/stops/search?q=adjamé' });
+      expect(res.statusCode).toBe(200);
+    });
+  });
 });

@@ -78,6 +78,58 @@ export async function findNearby(params: FindNearbyParams) {
     .sort((a, b) => (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0));
 }
 
+export interface SearchStopsParams {
+  query: string;
+  limit: number;
+  near?: { lat: number; lon: number };
+}
+
+// Distance haversine simple (résultat déjà borné par `limit`, pas besoin de
+// l'index GiST PostGIS ici — contrairement à findNearby qui filtre par rayon
+// sur potentiellement toute la table).
+function haversineMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const R = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Recherche textuelle sur le nom d'un arrêt OU le nom/n° court d'une de ses
+// lignes (ex. taper "15" retrouve les arrêts desservis par la ligne 15).
+// Insensible à la casse. Si `near` est fourni, les résultats sont triés par
+// distance à ce point plutôt que par ordre de correspondance SQL brut — plus
+// utile quand l'utilisateur a déjà une position de référence (la sienne).
+export async function searchStops(params: SearchStopsParams) {
+  const { query, limit, near } = params;
+
+  const stops = await prisma.stop.findMany({
+    where: {
+      OR: [
+        { name: { contains: query, mode: 'insensitive' } },
+        { stopLines: { some: { line: { name: { contains: query, mode: 'insensitive' } } } } },
+        { stopLines: { some: { line: { shortName: { contains: query, mode: 'insensitive' } } } } },
+      ],
+    },
+    include: STOP_LINE_INCLUDE,
+    take: near ? undefined : limit,
+  });
+
+  const mapped = stops.map((stop) => ({
+    ...toApiStop(stop),
+    distanceMeters: near ? haversineMeters(near, { lat: stop.lat, lon: stop.lon }) : null,
+  }));
+
+  if (near) {
+    mapped.sort((a, b) => (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0));
+    return mapped.slice(0, limit);
+  }
+  return mapped;
+}
+
 export async function findById(id: string) {
   const stop = await prisma.stop.findUnique({
     where: { id },

@@ -8,6 +8,13 @@
      navigateur : la barre du haut interceptait les clics sur le bouton
      favori situé en haut du panneau, les deux zones se chevauchant). */
   --topbar-height: 3.625rem;
+  /* Espace réservé en haut de la carte pour .stop-search (barre de recherche
+     d'arrêts, phase 2) — même logique que --topbar-height : les contrôles de
+     carte déjà en position absolue (sélecteur de style, message de statut)
+     doivent démarrer SOUS cette barre, jamais lui disputer l'empilement via
+     z-index (leçon déjà appliquée une fois sur ce projet, voir §5 de
+     PROJECT_MEMORY.md). */
+  --search-bar-clearance: 3.75rem;
   color-scheme: light;
 }
 
@@ -111,7 +118,7 @@ button:disabled {
 
 .home__status {
   position: absolute;
-  top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  top: calc(var(--search-bar-clearance) + env(safe-area-inset-top, 0px));
   left: calc(0.5rem + env(safe-area-inset-left, 0px));
   z-index: 10;
   background: white;
@@ -267,9 +274,116 @@ button:disabled {
   font-size: 0.9rem;
 }
 
-.map-style-switcher {
+/* --- Barre de recherche d'arrêts (phase 2, "destination-first"). ----------- */
+/* z-index plus élevé que les autres contrôles de carte : son dropdown de
+   résultats doit passer AU-DESSUS du sélecteur de style, jamais l'inverse. */
+.stop-search {
   position: absolute;
   top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  left: calc(0.5rem + env(safe-area-inset-left, 0px));
+  right: calc(0.5rem + env(safe-area-inset-right, 0px));
+  z-index: 15;
+  max-width: 420px;
+}
+
+.stop-search__box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: white;
+  border-radius: 999px;
+  padding: 0.6rem 0.9rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.stop-search__icon {
+  color: #888;
+  flex-shrink: 0;
+}
+
+.stop-search__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.stop-search__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.stop-search__spinner,
+.stop-search__clear {
+  flex-shrink: 0;
+  color: var(--color-primary);
+}
+
+.stop-search__clear {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem;
+  color: #888;
+}
+
+.stop-search__results {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  max-height: min(60vh, 360px);
+  overflow-y: auto;
+}
+
+.stop-search__message {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.stop-search__result {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.stop-search__result:hover {
+  background: #eef6f6;
+}
+
+.stop-search__result-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.stop-search__result-lines {
+  font-size: 0.75rem;
+  color: #777;
+}
+
+.map-style-switcher {
+  position: absolute;
+  top: calc(var(--search-bar-clearance) + env(safe-area-inset-top, 0px));
   left: calc(0.5rem + env(safe-area-inset-left, 0px));
   z-index: 10;
   display: flex;

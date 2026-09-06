@@ -20,6 +20,7 @@ import {
 import { haversineDistanceMeters, useLiveTracking } from '@/hooks/useLiveTracking';
 import { AuthStatus } from '@/components/AuthStatus';
 import { StopsMap } from '@/components/StopsMap';
+import { StopSearchBar } from '@/components/StopSearchBar';
 import {
   BikeIcon,
   CarIcon,
@@ -589,6 +590,16 @@ export function HomePage() {
     setUserLocation(pos);
   }, []);
 
+  // Sélection depuis la barre de recherche (phase 2, §12) : contrairement à
+  // un clic sur un marqueur déjà visible, l'arrêt trouvé peut être hors de
+  // la zone actuellement chargée — on recentre la carte dessus (ce qui
+  // relance useNearbyStops via la clé de query incluant `center`) EN PLUS
+  // d'ouvrir le panneau détail, pour que le marqueur soit réellement visible.
+  const handleSelectFromSearch = useCallback((stop: Stop) => {
+    setCenter({ lat: stop.lat, lon: stop.lon });
+    setSelectedStop(stop);
+  }, []);
+
   // Bannière de succès brève : auto-disparition ~2s après connexion OK.
   useEffect(() => {
     if (!health.data || health.isError) return;
@@ -619,6 +630,7 @@ export function HomePage() {
       </header>
 
       <div className="home__map">
+        <StopSearchBar near={userLocation ?? center} onSelectStop={handleSelectFromSearch} />
         {stops.isLoading && (
           <p className="home__status" role="status">
             <span className="spinner" aria-hidden="true" />

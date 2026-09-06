@@ -46,4 +46,30 @@ export const stopIdParamsSchema = z.object({
   id: z.string().uuid('Identifiant invalide'),
 });
 
+// Recherche textuelle (nom d'arrêt ou nom/n° de ligne) — écart UX identifié
+// en phase 2 (PROJECT_MEMORY.md §12) : jusqu'ici, aucun moyen de trouver un
+// arrêt par son nom, seulement par proximité géographique. `near` est
+// optionnel : s'il est fourni, les résultats sont triés par distance plutôt
+// que par pertinence texte brute (utile quand l'utilisateur tape depuis un
+// endroit connu).
+export const searchStopsQuerySchema = z.object({
+  q: z.string().trim().min(2, 'Recherche trop courte (2 caractères minimum)').max(100),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  near: z
+    .string()
+    .optional()
+    .transform((val, ctx) => {
+      if (!val) return undefined;
+      const [latStr, lonStr] = val.split(',');
+      const lat = Number(latStr);
+      const lon = Number(lonStr);
+      if (!latStr || !lonStr || Number.isNaN(lat) || Number.isNaN(lon)) {
+        ctx.addIssue({ code: 'custom', message: 'Format attendu : "lat,lon"' });
+        return z.NEVER;
+      }
+      return { lat, lon };
+    }),
+});
+
 export type NearbyStopsQuery = z.infer<typeof nearbyStopsQuerySchema>;
+export type SearchStopsQuery = z.infer<typeof searchStopsQuerySchema>;
