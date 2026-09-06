@@ -32,6 +32,7 @@ import { Prisma } from '../../generated/prisma/index.js';
 import { prisma } from '../../db/prisma.js';
 import { AppError } from '../../common/errors.js';
 import { namesLikelyMatch } from '../../common/normalize.js';
+import { POI_CATEGORIES } from './places.schemas.js';
 
 const GREATER_ABIDJAN_BOUNDS = { south: 5.2, west: -4.3, north: 5.55, east: -3.7 };
 
@@ -143,6 +144,112 @@ out ${limit};`;
     if (lat === undefined || lon === undefined || !name) continue;
     const matchedStopId = await findMatchingStop(name, lat, lon);
     results.push({ name, lat, lon, category: guessCategory(el.tags ?? {}), matchedStopId });
+  }
+  return results;
+}
+
+// Points d'intérêt à proximité d'un point donné (typiquement un arrêt) —
+// idée notée dans PROJECT_MEMORY.md §12.8, confirmée par l'utilisateur le
+// 2026-09-06 ("ok ajoute ça dans tes plans"), maintenant implémentée.
+// Vérifié empiriquement (pas supposé) : `node(around:...)` avec un filtre
+// `amenity` restreint à un petit rayon (ex. 300-500m) répond en <1s avec des
+// résultats réels (pharmacies, écoles...) — cf. test du 2026-09-06.
+export interface NearbyPoiResult {
+  name: string;
+  lat: number;
+  lon: number;
+  category: string;
+}
+
+export async function searchNearbyPois(
+  lat: number,
+  lon: number,
+  radiusMeters: number,
+  categories?: string[]
+): Promise<NearbyPoiResult[]> {
+  // Liste blanche stricte : jamais une catégorie arbitraire injectée dans la
+  // requête Overpass, même si le paramètre vient d'une requête utilisateur.
+  const wanted = (categories?.length ? categories : [...POI_CATEGORIES]).filter(
+    (c): c is (typeof POI_CATEGORIES)[number] => (POI_CATEGORIES as readonly string[]).includes(c)
+  );
+  if (wanted.length === 0) return [];
+  const amenityPattern = wanted.join('|');
+
+  const overpassQuery = `[out:json][timeout:${REQUEST_TIMEOUT_MS / 1000}];
+node(around:${radiusMeters},${lat},${lon})["amenity"~"^(${amenityPattern})$"];
+out 30;`;
+
+  let response: Response;
+  try {
+    response = await fetch(OVERPASS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT },
+      body: `data=${encodeURIComponent(overpassQuery)}`,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new PlacesServiceError(err instanceof Error ? err.message : 'fetch failed');
+  }
+  if (!response.ok) throw new PlacesServiceError(`Overpass HTTP ${response.status}`);
+
+  const data = (await response.json().catch(() => null)) as OverpassResponse | null;
+  if (!data) throw new PlacesServiceError('Réponse Overpass invalide');
+
+  const results: NearbyPoiResult[] = [];
+  for (const el of data.elements) {
+    const elLat = el.lat ?? el.center?.lat;
+    const elLon = el.lon ?? el.center?.lon;
+    const name = el.tags?.name;
+    const category = el.tags?.amenity;
+    if (elLat === undefined || elLon === undefined || !name || !category) continue;
+    results.push({ name, lat: elLat, lon: elLon, category });
+  }
+  return results;
+}
+
+// Quartiers du Grand Abidjan (tags OSM `place=suburb|neighbourhood|quarter`)
+// — idée notée §12.8, confirmée par l'utilisateur. `nwr` (pas seulement
+// `node`) est nécessaire ici car un quartier est souvent cartographié comme
+// une relation/way avec `out center` pour son point représentatif, pas
+// comme un simple nœud — vérifié empiriquement que `nwr` reste rapide
+// (~2s) sur la bbox déjà resserrée du Grand Abidjan (contrairement au test
+// initial `nwr` sur tout le pays qui timeoutait silencieusement, cf.
+// PROJECT_MEMORY.md §12.7bis).
+export interface NeighborhoodResult {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
+export async function listNeighborhoods(): Promise<NeighborhoodResult[]> {
+  const { south, west, north, east } = GREATER_ABIDJAN_BOUNDS;
+  const overpassQuery = `[out:json][timeout:${REQUEST_TIMEOUT_MS / 1000}];
+nwr(${south},${west},${north},${east})["place"~"^(suburb|neighbourhood|quarter)$"];
+out center 200;`;
+
+  let response: Response;
+  try {
+    response = await fetch(OVERPASS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT },
+      body: `data=${encodeURIComponent(overpassQuery)}`,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new PlacesServiceError(err instanceof Error ? err.message : 'fetch failed');
+  }
+  if (!response.ok) throw new PlacesServiceError(`Overpass HTTP ${response.status}`);
+
+  const data = (await response.json().catch(() => null)) as OverpassResponse | null;
+  if (!data) throw new PlacesServiceError('Réponse Overpass invalide');
+
+  const results: NeighborhoodResult[] = [];
+  for (const el of data.elements) {
+    const lat = el.lat ?? el.center?.lat;
+    const lon = el.lon ?? el.center?.lon;
+    const name = el.tags?.name;
+    if (lat === undefined || lon === undefined || !name) continue;
+    results.push({ name, lat, lon });
   }
   return results;
 }

@@ -233,3 +233,16 @@ export function CrosshairIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// Icône "afficher le rayon de recherche sur la carte" (cercles concentriques),
+// copiée depuis https://lucide.dev/icons/target, même licence ISC (voir
+// LICENSES-ICONS.md).
+export function TargetIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="2" />
+    </svg>
+  );
+}

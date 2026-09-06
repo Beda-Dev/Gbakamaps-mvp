@@ -152,6 +152,29 @@ interface StopsMapProps {
   destinationMarker?: MapPoint | null;
   // Segments du plan de trajet sélectionné, à dessiner en superposition.
   tripSegments?: TripSegment[] | null;
+  // Cercle matérialisant le rayon de recherche actuel autour du centre —
+  // demande explicite ("un cercle sur la carte qui montre vraiment le
+  // rayon"), null/undefined = masqué.
+  radiusCircleMeters?: number | null;
+}
+
+// Polygone approximatif d'un cercle réel (grand cercle terrestre, pas une
+// simple ellipse en degrés qui déformerait fortement aux latitudes élevées)
+// autour d'un centre, pour matérialiser un rayon de recherche sur la carte.
+// 64 points : lisse à l'œil sans peser sur le rendu.
+const EARTH_RADIUS_METERS = 6_371_000;
+function circlePolygon(center: { lat: number; lon: number }, radiusMeters: number, points = 64): [number, number][] {
+  const centerLatRad = (center.lat * Math.PI) / 180;
+  const coords: [number, number][] = [];
+  for (let i = 0; i <= points; i++) {
+    const angle = (i / points) * 2 * Math.PI;
+    const dx = radiusMeters * Math.cos(angle);
+    const dy = radiusMeters * Math.sin(angle);
+    const lat = center.lat + (dy / EARTH_RADIUS_METERS) * (180 / Math.PI);
+    const lon = center.lon + (dx / (EARTH_RADIUS_METERS * Math.cos(centerLatRad))) * (180 / Math.PI);
+    coords.push([lon, lat]);
+  }
+  return coords;
 }
 
 // Source/couche du tracé d'itinéraire (ids réservés à cet usage).
@@ -319,6 +342,55 @@ function upsertRouteLayer(map: Map, geometry: RouteGeometry | null): void {
   );
 }
 
+// Cercle matérialisant le rayon de recherche actuel — même logique de
+// création/mise à jour/suppression que le tracé point-à-point ci-dessus.
+const RADIUS_CIRCLE_SOURCE_ID = 'radius-circle';
+const RADIUS_CIRCLE_FILL_LAYER_ID = 'radius-circle-fill';
+const RADIUS_CIRCLE_LINE_LAYER_ID = 'radius-circle-line';
+
+function upsertRadiusCircleLayer(
+  map: Map,
+  center: { lat: number; lon: number },
+  radiusMeters: number | null
+): void {
+  const existing = map.getSource(RADIUS_CIRCLE_SOURCE_ID);
+  if (!radiusMeters) {
+    if (map.getLayer(RADIUS_CIRCLE_FILL_LAYER_ID)) map.removeLayer(RADIUS_CIRCLE_FILL_LAYER_ID);
+    if (map.getLayer(RADIUS_CIRCLE_LINE_LAYER_ID)) map.removeLayer(RADIUS_CIRCLE_LINE_LAYER_ID);
+    if (existing) map.removeSource(RADIUS_CIRCLE_SOURCE_ID);
+    return;
+  }
+  const data = {
+    type: 'Feature' as const,
+    properties: {},
+    geometry: { type: 'Polygon' as const, coordinates: [circlePolygon(center, radiusMeters)] },
+  };
+  if (existing && existing.type === 'geojson') {
+    (existing as GeoJSONSource).setData(data);
+    return;
+  }
+  map.addSource(RADIUS_CIRCLE_SOURCE_ID, { type: 'geojson', data });
+  const firstSymbolLayer = map.getStyle().layers?.find((l) => l.type === 'symbol');
+  map.addLayer(
+    {
+      id: RADIUS_CIRCLE_FILL_LAYER_ID,
+      type: 'fill',
+      source: RADIUS_CIRCLE_SOURCE_ID,
+      paint: { 'fill-color': '#0A9396', 'fill-opacity': 0.08 },
+    },
+    firstSymbolLayer?.id,
+  );
+  map.addLayer(
+    {
+      id: RADIUS_CIRCLE_LINE_LAYER_ID,
+      type: 'line',
+      source: RADIUS_CIRCLE_SOURCE_ID,
+      paint: { 'line-color': '#0A9396', 'line-width': 2, 'line-dasharray': [3, 2] },
+    },
+    firstSymbolLayer?.id,
+  );
+}
+
 export function StopsMap({
   center,
   stops,
@@ -332,6 +404,7 @@ export function StopsMap({
   originMarker,
   destinationMarker,
   tripSegments,
+  radiusCircleMeters,
 }: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
@@ -339,6 +412,7 @@ export function StopsMap({
   const originMarkerRef = useRef<Marker | null>(null);
   const destinationMarkerRef = useRef<Marker | null>(null);
   const tripSegmentsRef = useRef<TripSegment[] | null>(null);
+  const radiusCircleRef = useRef<number | null>(null);
   const stopsPopupRef = useRef<Popup | null>(null);
   // Table de correspondance id → arrêt complet, pour retrouver l'objet Stop
   // réel (nom, lignes…) au clic sur un point de la couche groupée (les
@@ -396,6 +470,7 @@ export function StopsMap({
       const segments = tripSegmentsRef.current;
       if (segments) upsertTripSegmentsLayer(map, segments);
       upsertStopsSource(map, stopsRef.current);
+      if (radiusCircleRef.current) upsertRadiusCircleLayer(map, center, radiusCircleRef.current);
     });
   }
 
@@ -596,6 +671,17 @@ export function StopsMap({
     if (!map || !mapReady) return;
     upsertStopsSource(map, stops);
   }, [stops, mapReady]);
+
+  // Cercle du rayon de recherche — recentré/redimensionné à chaque
+  // changement de centre ou de rayon (ex. sélection d'un nouveau rayon dans
+  // le sélecteur), jamais un cercle figé qui ne suivrait plus la carte.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const radius = radiusCircleMeters ?? null;
+    radiusCircleRef.current = radius;
+    upsertRadiusCircleLayer(map, center, radius);
+  }, [center.lat, center.lon, radiusCircleMeters, mapReady]);
 
   // Marqueur de la position utilisateur (point bleu + halo, style Maps).
   useEffect(() => {

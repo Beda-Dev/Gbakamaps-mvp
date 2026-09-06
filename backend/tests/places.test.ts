@@ -51,7 +51,7 @@ describe('places module — validation HTTP', () => {
       }
       await app.close();
     },
-    15000
+    25000
   );
 });
 
@@ -117,7 +117,74 @@ describe('places module — correspondance avec nos propres arrêts (matching mu
 
       await app.close();
     },
-    15000
+    25000
+  );
+});
+
+describe('places module — points d\'intérêt à proximité (GET /places/nearby)', () => {
+  it('refuse des coordonnées manquantes (400)', async () => {
+    const app = await buildApp();
+    await app.ready();
+    const res = await app.inject({ method: 'GET', url: '/api/places/nearby' });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it(
+    'trouve de vrais POI autour du Plateau (Overpass réel, pas de mock)',
+    async () => {
+      const app = await buildApp();
+      await app.ready();
+      // Plateau, Abidjan — zone dense en pharmacies/commerces, vérifié
+      // empiriquement le 2026-09-06 (7 résultats amenity~pharmacy|...).
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/places/nearby?lat=5.32&lon=-4.02&radius=500',
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(Array.isArray(body.data.pois)).toBe(true);
+      expect(body.data.pois.length).toBeGreaterThan(0);
+      const poi = body.data.pois[0];
+      expect(typeof poi.name).toBe('string');
+      expect(typeof poi.category).toBe('string');
+      await app.close();
+    },
+    25000
+  );
+
+  it('une catégorie inconnue (hors liste blanche) est ignorée, ne casse jamais la requête', async () => {
+    const app = await buildApp();
+    await app.ready();
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/places/nearby?lat=5.32&lon=-4.02&radius=100&categories=n_importe_quoi',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.pois).toEqual([]);
+    await app.close();
+  });
+});
+
+describe('places module — quartiers du Grand Abidjan (GET /places/neighborhoods)', () => {
+  it(
+    'retourne de vrais quartiers connus (Overpass réel, pas de mock)',
+    async () => {
+      const app = await buildApp();
+      await app.ready();
+      const res = await app.inject({ method: 'GET', url: '/api/places/neighborhoods' });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(true);
+      const names = (body.data.neighborhoods as { name: string }[]).map((n) => n.name);
+      // "Cocody" est un quartier réel d'Abidjan, déjà vu dans les tests
+      // manuels du 2026-09-06 — vérifie qu'on récupère des données réelles,
+      // pas juste un tableau vide qui passerait le test sans rien prouver.
+      expect(names).toContain('Cocody');
+      await app.close();
+    },
+    25000
   );
 });
 

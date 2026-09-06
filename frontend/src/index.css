@@ -219,6 +219,27 @@ button:disabled {
   border-top: 1px solid #eee;
 }
 
+.home__radius-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-left: 0.4rem;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  color: #777;
+  cursor: pointer;
+}
+
+.home__radius-toggle.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
 /* --- Panneau détail : bottom-sheet mobile, transition slide + fade. -------- */
 .home__detail {
   position: absolute;

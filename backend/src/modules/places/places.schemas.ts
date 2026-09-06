@@ -9,3 +9,40 @@ export const searchPlacesQuerySchema = z.object({
 });
 
 export type SearchPlacesQuery = z.infer<typeof searchPlacesQuerySchema>;
+
+// Catégories de POI réellement supportées (liste blanche de tags OSM
+// `amenity`/`shop` courants et utiles à proximité d'un arrêt) — jamais une
+// catégorie arbitraire passée telle quelle à Overpass.
+export const POI_CATEGORIES = [
+  'pharmacy',
+  'marketplace',
+  'school',
+  'hospital',
+  'clinic',
+  'bank',
+  'atm',
+  'restaurant',
+  'fast_food',
+  'cafe',
+  'fuel',
+  'police',
+  'place_of_worship',
+  'university',
+  'college',
+  'post_office',
+  'toilets',
+  'bus_station',
+] as const;
+
+export const nearbyPoisQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lon: z.coerce.number().min(-180).max(180),
+  radius: z.coerce.number().int().min(50).max(1000).default(300),
+  categories: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v.split(',').map((c) => c.trim()) : undefined)),
+});
+
+export type NearbyPoisQuery = z.infer<typeof nearbyPoisQuerySchema>;

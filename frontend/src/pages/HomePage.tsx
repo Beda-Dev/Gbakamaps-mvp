@@ -30,6 +30,7 @@ import {
   NavigationIcon,
   RouteIcon,
   StarIcon,
+  TargetIcon,
   XIcon,
 } from '@/components/icons';
 import type { Stop } from '@/lib/api/types';
@@ -552,6 +553,10 @@ export function HomePage() {
   // valeur de départ (comportement historique de cette page, inchangé par
   // défaut).
   const [searchRadius, setSearchRadius] = useState(1500);
+  // Affichage du cercle matérialisant ce rayon sur la carte — masqué par
+  // défaut (demande explicite : bouton dédié pour l'activer, pas un cercle
+  // permanent qui encombrerait la carte).
+  const [showRadiusCircle, setShowRadiusCircle] = useState(false);
   const stops = useNearbyStops(center.lat, center.lon, searchRadius);
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   // Géométrie du tracé d'itinéraire affichée sur la carte (null = aucun).
@@ -678,6 +683,7 @@ export function HomePage() {
             isLocating={isLocating}
             onRecenter={requestLocation}
             routeGeometry={routeGeometry}
+            radiusCircleMeters={showRadiusCircle ? searchRadius : null}
           />
         )}
       </div>
@@ -755,6 +761,16 @@ export function HomePage() {
               ))}
             </select>
           </label>
+          <button
+            type="button"
+            className={`home__radius-toggle${showRadiusCircle ? ' is-active' : ''}`}
+            onClick={() => setShowRadiusCircle((v) => !v)}
+            aria-pressed={showRadiusCircle}
+            title="Afficher le rayon de recherche sur la carte"
+          >
+            <TargetIcon width={16} height={16} aria-hidden="true" />
+            <span className="sr-only">Afficher le rayon sur la carte</span>
+          </button>
         </p>
       )}
       </main>
