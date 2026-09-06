@@ -18,7 +18,13 @@ const envSchema = z.object({
   // par des virgules (dev local + tunnel), ou "*" pour tout autoriser
   // (jamais en production — cf. isAllowedOrigin).
   FRONTEND_ORIGIN: z.string().min(1).default('http://localhost:5173'),
-  OSRM_URL: z.string().url().default('https://router.project-osrm.org'),
+  // OpenRouteService (voir routing.service.ts) — remplace OSRM, dont le
+  // serveur démo public s'est révélé ne pas distinguer les profils de
+  // trajet malgré sa documentation. Compte gratuit requis sur
+  // openrouteservice.org (pas de carte bancaire), même friction que
+  // MapTiler côté frontend.
+  ORS_API_KEY: z.string().min(1, 'ORS_API_KEY est requis (compte gratuit sur openrouteservice.org)'),
+  ORS_BASE_URL: z.string().url().default('https://api.openrouteservice.org'),
 });
 
 const parsed = envSchema.safeParse(process.env);

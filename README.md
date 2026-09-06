@@ -8,7 +8,7 @@ Reconstruction du projet GbakaMap (localisation des transports informels — bus
 
 | Composant | État |
 |---|---|
-| Backend (Fastify + Prisma + PostgreSQL/PostGIS) | ✅ Fonctionnel — 6 modules, 50 tests réels |
+| Backend (Fastify + Prisma + PostgreSQL/PostGIS) | ✅ Fonctionnel — 6 modules, 52 tests réels |
 | Frontend (PWA) | 🚧 Carte + auth fonctionnelles ; favoris/signalements/admin/itinéraire pas encore d'écran |
 | Déploiement / CI | 🚧 Pas encore mis en place (volontairement, cf. principe MVP) |
 
@@ -17,7 +17,7 @@ Reconstruction du projet GbakaMap (localisation des transports informels — bus
 - **Backend** : Node.js + [Fastify](https://fastify.dev) + [Prisma](https://www.prisma.io) + TypeScript
 - **Base de données** : PostgreSQL 16 + [PostGIS](https://postgis.net) (recherche géospatiale indexée), auto-hébergée via Docker
 - **Authentification** : gérée nous-mêmes — sessions opaques en base (pas de JWT côté client), mots de passe hashés en argon2id. Pas de Firebase.
-- **Frontend** (à venir) : Vite + React + TypeScript, PWA
+- **Frontend** : Vite + React + TypeScript, PWA (MapLibre/MapTiler, auth, favoris)
 - **Données transport** : import batch depuis le flux GTFS [JungleBus — Grand Abidjan](backend/data/gtfs-abidjan/README.md) (3 820 arrêts réels, 391 lignes bus/gbaka/woro-woro)
 
 ## Prérequis
@@ -78,22 +78,22 @@ docker compose -f ../docker-compose.yml up -d db   # si pas déjà démarré
 npx vitest run
 ```
 
-Tous les tests tournent contre une **vraie base PostgreSQL/PostGIS** (aucun mock de la base). Les seuls mocks du projet concernent un service tiers (OSRM) pour simuler des pannes réseau de façon déterministe — voir `backend/tests/routing.test.ts`.
+Tous les tests tournent contre une **vraie base PostgreSQL/PostGIS** (aucun mock de la base). Les seuls mocks du projet concernent un service tiers (OpenRouteService) pour simuler des pannes réseau de façon déterministe — voir `backend/tests/routing.test.ts`.
 
-**État actuel : 50 tests, tous verts.**
+**État actuel : 52 tests backend, tous verts (+ 6 tests frontend).**
 
 ## Architecture
 
 ```
-PWA (Vite + React + TS)         [à venir]
-        │  HTTP / JSON (cookies httpOnly)
+PWA (Vite + React + TS) — carte + auth fonctionnelles
+        │  HTTP / JSON (cookies httpOnly, proxy Vite en dev)
         ▼
 Backend Fastify (Node.js)
   ├── modules/auth       — signup, login, logout, session
   ├── modules/stops      — recherche géospatiale (PostGIS), détail arrêt
   ├── modules/favorites  — favoris utilisateur
   ├── modules/reports    — signalements communautaires + modération admin
-  └── modules/routing    — proxy OSRM (calcul d'itinéraire)
+  └── modules/routing    — proxy OpenRouteService (calcul d'itinéraire, 3 profils réels)
         │  Prisma
         ▼
 PostgreSQL 16 + PostGIS (Docker, volume persistant)
@@ -122,7 +122,7 @@ Chaque module suit la même convention : `*.schemas.ts` (validation Zod), `*.ser
 | GET | `/api/reports/mine` | session | Lister ses propres signalements |
 | GET | `/api/admin/reports` | session + rôle ADMIN | Lister tous les signalements (filtrable par `status`) |
 | PATCH | `/api/admin/reports/:id` | session + rôle ADMIN | Modérer un signalement |
-| GET | `/api/route` | — | Calculer un itinéraire (`from`, `to` en `lat,lon`) |
+| GET | `/api/route` | — | Calculer un itinéraire (`from`, `to` en `lat,lon`, `profile` : `driving-car`/`foot-walking`/`cycling-regular`) |
 
 Toutes les réponses suivent le format `{ success: boolean, data?, error?, code? }`.
 
@@ -142,7 +142,7 @@ L'ancien projet (Next.js + Firebase + Neon + Overpass en direct) a fait l'objet 
 
 ## Limites connues du MVP (volontaires)
 
-- Un seul mode de transport pour le calcul d'itinéraire (`driving`) — le serveur OSRM public utilisé ne route en réalité que sur le graphe voiture, quel que soit le profil demandé (vérifié empiriquement). Exposer un choix de mode aurait été trompeur.
+- Calcul d'itinéraire via OpenRouteService (3 profils réels : voiture/vélo/marche, vérifiés empiriquement distincts — contrairement au serveur démo OSRM initialement utilisé, qui renvoyait la même distance/durée quel que soit le profil demandé). Nécessite une clé API gratuite (`ORS_API_KEY`).
 - Pas de météo, pas de mode hors-ligne, pas d'historique de recherche, pas de comparaison multi-modes — reportés en V2/V3.
 - Les données GTFS importées datent de fin 2021 (horaires obsolètes) ; seule la topologie (arrêts, lignes, dessertes) est utilisée, jamais les horaires.
 - Pas de CI/CD pour l'instant — choix assumé tant que le MVP n'est pas stabilisé.

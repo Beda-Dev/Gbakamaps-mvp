@@ -2,7 +2,9 @@
 
 > **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
 
-Dernière mise à jour : **2026-09-06 17:05**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+Dernière mise à jour : **2026-09-06 17:30**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+
+**Règle adoptée pendant cette session (2026-09-06 17:05), à appliquer systématiquement** : avant d'adopter tout nouvel outil/service externe dans ce projet (librairie, API tierce, etc.), faire une recherche réelle (web + test empirique si possible) sur sa fiabilité/ses limites plutôt que de se fier à sa réputation ou sa documentation seule — c'est exactement ce qui a révélé qu'OSRM ne distinguait pas ses profils malgré ce qu'affirme sa propre doc (voir §4).
 
 ---
 
@@ -169,11 +171,24 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 **Pourquoi** : corrige la limite de l'ancien projet (scan + calcul Haversine en JavaScript, non indexé).
 **Contrainte technique** : Prisma ne modélise pas nativement les types géographiques — utilisation de `Unsupported(...)` dans le schéma + requêtes `$queryRaw` paramétrées (`Prisma.sql`, donc protégées contre l'injection) pour les calculs spatiaux.
 
-### 2026-09-06 01:27 — Un seul profil OSRM exposé ("driving")
+### 2026-09-06 01:27 — Un seul profil OSRM exposé ("driving") — **SUPERSEDÉE le 2026-09-06 17:xx, voir plus bas**
 
-**Décision** : ne pas exposer de choix de mode de trajet (marche/vélo/voiture) côté API/UI.
+**Décision (obsolète)** : ne pas exposer de choix de mode de trajet (marche/vélo/voiture) côté API/UI.
 **Pourquoi** : vérifié empiriquement contre `router.project-osrm.org` que les profils `walking`/`cycling`/`driving` renvoient EXACTEMENT la même distance/durée sur un même trajet — preuve que ce serveur démo public ne route en réalité que sur le graphe voiture. Exposer un choix de mode aurait affiché un temps de marche = temps en voiture, ce qui est trompeur.
-**Solution future (V2)** : pointer vers une instance OSRM auto-hébergée avec les profils réellement configurés.
+**Remplacée par** : la décision OpenRouteService ci-dessous — le problème (profils non distincts) a été résolu en changeant de fournisseur plutôt qu'en attendant une instance auto-hébergée.
+
+### 2026-09-06 17:xx — OSRM remplacé par OpenRouteService : profils réellement distincts
+
+**Décision** : remplacer OSRM (`router.project-osrm.org`) par [OpenRouteService](https://openrouteservice.org) (HeiGIT, université de Heidelberg) pour le calcul d'itinéraire, avec 3 profils exposés : `driving-car`, `foot-walking`, `cycling-regular`.
+**Pourquoi** : suite à une demande explicite de l'utilisateur de rechercher un meilleur outil. Vérifié empiriquement (2 trajets Abidjan différents) qu'OSRM démo renvoie une distance/durée strictement identique quel que soit le profil — confirmé une seconde fois avec un troisième trajet plus long (Plateau→Yopougon), donc pas un hasard de coordonnées. La documentation OSRM elle-même prévient : "pas de garantie d'exactitude des résultats, serveur de démonstration, pas prêt pour la production".
+**Vérification empirique du remplacement (avec la vraie clé de l'utilisateur, sur Plateau→Cocody)** :
+  - `driving-car` : 6077,5 m, 621 s (10,3 min)
+  - `cycling-regular` : 7363 m (chemin différent), 1492,8 s (24,9 min)
+  - `foot-walking` : 6047,3 m, 4354 s (72,6 min)
+  → Les 3 profils sont bien distincts, contrairement à OSRM.
+**Contrainte** : `ORS_API_KEY` est **requis** (le serveur refuse de démarrer sans, comme `DATABASE_URL`/`SESSION_SECRET`) — compte gratuit sur openrouteservice.org, pas de carte bancaire, quota ~2000-2500 requêtes/jour. Même friction d'adoption que `VITE_MAPTILER_KEY` côté frontend.
+**Fichiers concernés** : `backend/src/config/env.ts` (ORS_API_KEY remplace OSRM_URL), `backend/src/modules/routing/routing.schemas.ts` (nouveau param `profile`), `backend/src/modules/routing/routing.service.ts` (réécrit pour l'API ORS — `POST /v2/directions/{profile}/geojson`, header `Authorization`), `backend/tests/routing.test.ts` (mocks adaptés au format de réponse ORS + un nouveau test qui vérifie explicitement que `foot-walking` et `driving-car` donnent des durées différentes), `docker-compose.yml` (variable d'environnement transmise au conteneur), `.env.example` + `backend/.env` (clé).
+**Bug rencontré pendant la migration** : après avoir changé `.env`/`backend/.env`, le conteneur Docker recréé démarrait quand même en erreur "ORS_API_KEY manquant" — cause : `docker-compose.yml` listait encore explicitement `OSRM_URL: ${OSRM_URL}` dans `environment:` du service `backend` et ne transmettait pas `ORS_API_KEY`. Corrigé en remplaçant cette ligne. **Leçon** : lors du remplacement d'une variable d'environnement, penser à `docker-compose.yml` en plus des fichiers `.env` eux-mêmes — Docker Compose ne transmet que les variables explicitement listées dans `environment:`, pas tout le `.env` en vrac.
 
 ### 2026-09-06 (squelette frontend) — MapTiler plutôt que Google Maps ou OSM brut
 
@@ -298,6 +313,7 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 02:14 | `818eb8b` | Passe UX/UI, délégué à OpenCode | 2 bugs bloquants trouvés et corrigés (alias `@`, maplibre worker) via test visuel réel |
 | 2026-09-06 16:37 | `c02f6a4` | CORS multi-origine (tunnel) + icônes Lucide | Support tunnel VS Code pour test mobile |
 | 2026-09-06 17:00 | `afd10c2` | Écrans auth (login/signup) + routage, délégué à OpenCode | 2 bugs runtime trouvés et corrigés (proxy Vite, Content-Type vide) via test navigateur réel |
+| 2026-09-06 17:3x | *(à committer)* | Remplacement OSRM → OpenRouteService, écrit directement | 52 tests backend, 3 profils réellement distincts vérifiés (10,3/24,9/72,6 min sur le même trajet) |
 
 ---
 
@@ -358,7 +374,11 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 
 ## 10. Prochaine action
 
-**Reprendre par l'écran favoris ou signalements** (backend déjà prêt et testé pour les deux, le choix entre les deux est libre). Pattern à suivre : références `LoginPage.tsx`/`SignupPage.tsx` et `useAuth.ts` pour la convention de page + hook, `HomePage.tsx` pour l'intégration dans la mise en page existante. **Après toute implémentation frontend, systématiquement vérifier en navigateur réel (pas seulement tsc/build/vitest)** avant de commiter — cf. §8, deux bugs runtime ont échappé aux trois vérifications automatisées lors des deux derniers lots de travail.
+**Écran favoris : spec de délégation déjà rédigée mais PAS ENCORE EXÉCUTÉE.** Le fichier de tâche existe dans le scratchpad de session (`opencode-task-favorites-screen.md`, non versionné dans ce dépôt) mais la commande de délégation à OpenCode n'a jamais été lancée — interrompue par une question de l'utilisateur sur le choix de l'outil de routing, qui a pris la priorité (résolu, voir §4 OpenRouteService). **Une icône `StarIcon` a déjà été ajoutée** dans `frontend/src/components/icons/index.tsx` en anticipation de cet écran.
+
+À la reprise : soit relancer la délégation (recréer la spec en s'inspirant de §9), soit l'écrire directement. Pattern à suivre : `LoginPage.tsx`/`SignupPage.tsx` et `useAuth.ts` pour la convention de page + hook, `HomePage.tsx` pour l'intégration dans la mise en page existante (panneau détail d'un arrêt = bon endroit pour un bouton favori). **Après toute implémentation frontend, systématiquement vérifier en navigateur réel (pas seulement tsc/build/vitest)** avant de commiter — cf. §8, deux bugs runtime ont échappé aux trois vérifications automatisées lors du lot précédent (écrans auth).
+
+**Écran itinéraire** : le backend expose désormais 3 profils réels (`driving-car`/`foot-walking`/`cycling-regular`, voir §4) — un écran qui les exploite (sélecteur de mode, affichage du tracé sur la carte via `geometry` GeoJSON déjà retourné) a maintenant une vraie valeur ajoutée, alors que ce n'était pas le cas tant qu'un seul profil (OSRM) était fiable.
 
 ---
 

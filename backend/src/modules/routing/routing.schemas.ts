@@ -20,11 +20,18 @@ const coordinatePairSchema = z
     message: 'Longitude hors de la zone de service',
   });
 
+// Profils OpenRouteService réellement distincts (vérifié : contrairement au
+// serveur démo OSRM public, ORS calcule effectivement des itinéraires
+// différents par mode — pas juste le même graphe voiture recyclé).
+export const routeProfileEnum = z.enum(['driving-car', 'foot-walking', 'cycling-regular']);
+
 export const routeQuerySchema = z.object({
   from: coordinatePairSchema,
   to: coordinatePairSchema,
+  profile: routeProfileEnum.default('driving-car'),
   alternatives: z.coerce.boolean().default(false),
 });
 
 export type RouteQuery = z.infer<typeof routeQuerySchema>;
+export type RouteProfile = z.infer<typeof routeProfileEnum>;
 export type Coordinates = { lat: number; lon: number };

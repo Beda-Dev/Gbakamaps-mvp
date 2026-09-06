@@ -1,6 +1,6 @@
 # Licences des icônes
 
-Les icônes de `index.tsx` (`LocateFixedIcon`, `XIcon`, `LoaderIcon`, `EyeIcon`, `EyeOffIcon`) sont copiées depuis [Lucide](https://lucide.dev/icons/) (fichiers `locate-fixed.svg`, `x.svg`, `loader-circle.svg`, `eye.svg`, `eye-off.svg`).
+Les icônes de `index.tsx` (`LocateFixedIcon`, `XIcon`, `LoaderIcon`, `EyeIcon`, `EyeOffIcon`, `StarIcon`) sont copiées depuis [Lucide](https://lucide.dev/icons/) (fichiers `locate-fixed.svg`, `x.svg`, `loader-circle.svg`, `eye.svg`, `eye-off.svg`, `star.svg`).
 
 - **Lucide** — Licence ISC. Copyright (c) Lucide Contributors.
 - Icônes dérivées du projet **Feather** — Licence MIT. Copyright (c) Cole Bemis.
