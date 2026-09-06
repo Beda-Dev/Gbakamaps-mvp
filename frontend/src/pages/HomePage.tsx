@@ -18,6 +18,8 @@ import {
   type RouteProfile,
 } from '@/hooks/useRoute';
 import { haversineDistanceMeters, useLiveTracking } from '@/hooks/useLiveTracking';
+import { POI_CATEGORY_LABELS, useNearbyPois } from '@/hooks/useNearbyPois';
+import { useNeighborhoods } from '@/hooks/useNeighborhoods';
 import { AuthStatus } from '@/components/AuthStatus';
 import { STOP_TYPE_LABELS, StopsMap } from '@/components/StopsMap';
 import { StopSearchBar } from '@/components/StopSearchBar';
@@ -27,6 +29,7 @@ import {
   FlagIcon,
   FootprintsIcon,
   LoaderIcon,
+  MapPinIcon,
   NavigationIcon,
   RouteIcon,
   StarIcon,
@@ -557,8 +560,19 @@ export function HomePage() {
   // défaut (demande explicite : bouton dédié pour l'activer, pas un cercle
   // permanent qui encombrerait la carte).
   const [showRadiusCircle, setShowRadiusCircle] = useState(false);
+  // Étiquettes de quartiers — masquées par défaut (appel Overpass évitable
+  // tant que l'utilisateur ne les demande pas explicitement), chargées à la
+  // première activation puis mises en cache (staleTime long côté hook).
+  const [showNeighborhoods, setShowNeighborhoods] = useState(false);
+  const { neighborhoods } = useNeighborhoods(showNeighborhoods);
   const stops = useNearbyStops(center.lat, center.lon, searchRadius);
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
+  // Points d'intérêt réels autour de l'arrêt actuellement sélectionné
+  // (pharmacie, marché, école...) — désactivé tant qu'aucun arrêt n'est
+  // choisi (voir useNearbyPois : hook désactivé sur point null).
+  const nearbyPois = useNearbyPois(
+    selectedStop ? { lat: selectedStop.lat, lon: selectedStop.lon } : null
+  );
   // Géométrie du tracé d'itinéraire affichée sur la carte (null = aucun).
   const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | null>(null);
 
@@ -684,6 +698,7 @@ export function HomePage() {
             onRecenter={requestLocation}
             routeGeometry={routeGeometry}
             radiusCircleMeters={showRadiusCircle ? searchRadius : null}
+            neighborhoods={showNeighborhoods ? neighborhoods : null}
           />
         )}
       </div>
@@ -740,6 +755,27 @@ export function HomePage() {
             ) : (
               <p className="home__detail-meta">Aucune ligne connue desservant cet arrêt pour l'instant.</p>
             )}
+            {/* Points d'intérêt à proximité (Overpass) — section clairement
+                distincte des lignes de transport ci-dessus : ce ne sont pas
+                des arrêts, jamais présentés comme tels. */}
+            <p className="home__detail-meta home__detail-meta--pois">Aux alentours</p>
+            {nearbyPois.isLoading && <p className="home__detail-meta">Recherche des lieux à proximité…</p>}
+            {!nearbyPois.isLoading && nearbyPois.pois.length === 0 && (
+              <p className="home__detail-meta">Rien de répertorié à proximité.</p>
+            )}
+            {nearbyPois.pois.length > 0 && (
+              <ul className="home__pois">
+                {nearbyPois.pois.slice(0, 6).map((poi, i) => (
+                  <li key={i}>
+                    <MapPinIcon width={12} height={12} aria-hidden="true" />
+                    {poi.name}
+                    <span className="home__pois-category">
+                      {POI_CATEGORY_LABELS[poi.category] ?? poi.category}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
       </div>
@@ -770,6 +806,16 @@ export function HomePage() {
           >
             <TargetIcon width={16} height={16} aria-hidden="true" />
             <span className="sr-only">Afficher le rayon sur la carte</span>
+          </button>
+          <button
+            type="button"
+            className={`home__radius-toggle${showNeighborhoods ? ' is-active' : ''}`}
+            onClick={() => setShowNeighborhoods((v) => !v)}
+            aria-pressed={showNeighborhoods}
+            title="Afficher les noms de quartiers sur la carte"
+          >
+            <MapPinIcon width={16} height={16} aria-hidden="true" />
+            <span className="sr-only">Afficher les quartiers sur la carte</span>
           </button>
         </p>
       )}

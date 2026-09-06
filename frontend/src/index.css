@@ -344,6 +344,36 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.home__detail-meta--pois {
+  margin-top: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.home__pois {
+  list-style: none;
+  padding: 0;
+  margin: 0.35rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.home__pois li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.home__pois-category {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--color-text-secondary, #6b6b6b);
+  white-space: nowrap;
+}
+
 /* --- Barre de recherche d'arrêts (phase 2, "destination-first"). ----------- */
 /* z-index plus élevé que les autres contrôles de carte : son dropdown de
    résultats doit passer AU-DESSUS du sélecteur de style, jamais l'inverse. */

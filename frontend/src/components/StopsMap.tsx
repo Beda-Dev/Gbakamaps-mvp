@@ -156,6 +156,8 @@ interface StopsMapProps {
   // demande explicite ("un cercle sur la carte qui montre vraiment le
   // rayon"), null/undefined = masqué.
   radiusCircleMeters?: number | null;
+  // Étiquettes de quartiers (Overpass, §12.13) — null/undefined/[] = masqué.
+  neighborhoods?: { name: string; lat: number; lon: number }[] | null;
 }
 
 // Polygone approximatif d'un cercle réel (grand cercle terrestre, pas une
@@ -391,6 +393,55 @@ function upsertRadiusCircleLayer(
   );
 }
 
+// Étiquettes de quartiers — simple couche symbole texte, jamais cliquable
+// (juste un repère visuel de zone, pas une entité sélectionnable comme un
+// arrêt) : volontairement absente de STOPS_CLICKABLE_LAYER_IDS.
+const NEIGHBORHOODS_SOURCE_ID = 'neighborhoods';
+const NEIGHBORHOODS_LAYER_ID = 'neighborhoods-label';
+
+function upsertNeighborhoodsLayer(map: Map, neighborhoods: { name: string; lat: number; lon: number }[] | null): void {
+  const existing = map.getSource(NEIGHBORHOODS_SOURCE_ID);
+  if (!neighborhoods || neighborhoods.length === 0) {
+    if (map.getLayer(NEIGHBORHOODS_LAYER_ID)) map.removeLayer(NEIGHBORHOODS_LAYER_ID);
+    if (existing) map.removeSource(NEIGHBORHOODS_SOURCE_ID);
+    return;
+  }
+  const data = {
+    type: 'FeatureCollection' as const,
+    features: neighborhoods.map((n) => ({
+      type: 'Feature' as const,
+      properties: { name: n.name },
+      geometry: { type: 'Point' as const, coordinates: [n.lon, n.lat] },
+    })),
+  };
+  if (existing && existing.type === 'geojson') {
+    (existing as GeoJSONSource).setData(data);
+    return;
+  }
+  map.addSource(NEIGHBORHOODS_SOURCE_ID, { type: 'geojson', data });
+  map.addLayer({
+    id: NEIGHBORHOODS_LAYER_ID,
+    type: 'symbol',
+    source: NEIGHBORHOODS_SOURCE_ID,
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Noto Sans Bold', 'Open Sans Bold', 'Arial Unicode MS Bold'],
+      'text-size': 13,
+      'text-letter-spacing': 0.05,
+      'text-transform': 'uppercase',
+      // Espacement large : ce sont des repères de zone, pas des labels
+      // denses — mieux vaut en cacher certains que les superposer illisibles.
+      'text-padding': 20,
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': '#4a4a4a',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 1.5,
+    },
+  });
+}
+
 export function StopsMap({
   center,
   stops,
@@ -405,6 +456,7 @@ export function StopsMap({
   destinationMarker,
   tripSegments,
   radiusCircleMeters,
+  neighborhoods,
 }: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
@@ -413,6 +465,7 @@ export function StopsMap({
   const destinationMarkerRef = useRef<Marker | null>(null);
   const tripSegmentsRef = useRef<TripSegment[] | null>(null);
   const radiusCircleRef = useRef<number | null>(null);
+  const neighborhoodsRef = useRef<{ name: string; lat: number; lon: number }[] | null>(null);
   const stopsPopupRef = useRef<Popup | null>(null);
   // Table de correspondance id → arrêt complet, pour retrouver l'objet Stop
   // réel (nom, lignes…) au clic sur un point de la couche groupée (les
@@ -471,6 +524,7 @@ export function StopsMap({
       if (segments) upsertTripSegmentsLayer(map, segments);
       upsertStopsSource(map, stopsRef.current);
       if (radiusCircleRef.current) upsertRadiusCircleLayer(map, center, radiusCircleRef.current);
+      upsertNeighborhoodsLayer(map, neighborhoodsRef.current);
     });
   }
 
@@ -682,6 +736,16 @@ export function StopsMap({
     radiusCircleRef.current = radius;
     upsertRadiusCircleLayer(map, center, radius);
   }, [center.lat, center.lon, radiusCircleMeters, mapReady]);
+
+  // Étiquettes de quartiers — liste stable une fois chargée, pas de logique
+  // de repositionnement (les coordonnées viennent directement d'Overpass).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const list = neighborhoods ?? null;
+    neighborhoodsRef.current = list;
+    upsertNeighborhoodsLayer(map, list);
+  }, [neighborhoods, mapReady]);
 
   // Marqueur de la position utilisateur (point bleu + halo, style Maps).
   useEffect(() => {
