@@ -1,3 +1,9 @@
+-- Extension requise pour les colonnes géographiques (utilisée à partir de
+-- la migration add_postgis_geography). Déclarée ici, dans la toute première
+-- migration, car la "shadow database" de Prisma rejoue l'historique complet
+-- depuis zéro et doit donc trouver l'extension dès le début.
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- CreateEnum
 CREATE TYPE "UserRole" AS ENUM ('USER', 'ADMIN');
 

@@ -89,6 +89,15 @@ model Stop {
   verified    Boolean  @default(false)
   lastUpdated DateTime @default(now())
 
+  // Colonne géographique PostGIS, maintenue par un trigger SQL (cf. migration
+  // add_postgis_geography) à partir de lat/lon. Prisma ne modélise pas ce
+  // type nativement : `Unsupported` l'expose pour que le schéma corresponde
+  // à la base réelle, mais toutes les requêtes dessus passent par $queryRaw
+  // (voir stops.service.ts). Corrige la limite identifiée à l'audit : les
+  // recherches de proximité ne reposaient que sur une bounding box + calcul
+  // Haversine en JavaScript, non indexé.
+  geog Unsupported("geography(Point, 4326)")?
+
   favorites Favorite[]
   reports   Report[]
   stopLines StopLine[]
@@ -121,6 +130,10 @@ model TransportLine {
   operator      String?
   fare          Float?
   active        Boolean       @default(true)
+
+  // Référence externe (ex: route_id GTFS) permettant de ré-exécuter le
+  // script d'import sans dupliquer les lignes (upsert par ce champ).
+  externalRef String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

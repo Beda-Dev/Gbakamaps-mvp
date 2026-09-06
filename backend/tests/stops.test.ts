@@ -1,0 +1,147 @@
+// =============================================================================
+// Test d'intégration du module stops — vérifie réellement la recherche
+// spatiale PostGIS (ST_DWithin), pas seulement la forme des réponses.
+// Trois arrêts sont semés à des distances connues (calculées par Haversine) :
+//   A (Gare Sud Adjamé, STATION)   — point de référence de la recherche
+//   B (Arrêt Adjamé Marché, BUS_STOP) — ~157m de A
+//   C (Yopougon Gesco, GBAKA_STOP) — ~12,5km de A
+// =============================================================================
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { buildApp } from '../src/app.js';
+import { prisma } from '../src/db/prisma.js';
+
+describe('stops module', () => {
+  let app: Awaited<ReturnType<typeof buildApp>>;
+
+  const pointA = { lat: 5.32, lon: -4.02 }; // référence
+  const pointB = { lat: 5.321, lon: -4.021 }; // ~157m de A
+  const pointC = { lat: 5.4, lon: -4.1 }; // ~12.5km de A
+
+  let stopAId = '';
+  let stopBId = '';
+  let stopCId = '';
+
+  beforeAll(async () => {
+    app = await buildApp();
+    await app.ready();
+
+    const stopA = await prisma.stop.create({
+      data: { name: 'Gare Sud Adjamé [TEST]', lat: pointA.lat, lon: pointA.lon, stopType: 'STATION' },
+    });
+    const stopB = await prisma.stop.create({
+      data: { name: 'Arrêt Adjamé Marché [TEST]', lat: pointB.lat, lon: pointB.lon, stopType: 'BUS_STOP' },
+    });
+    const stopC = await prisma.stop.create({
+      data: { name: 'Yopougon Gesco [TEST]', lat: pointC.lat, lon: pointC.lon, stopType: 'GBAKA_STOP' },
+    });
+
+    stopAId = stopA.id;
+    stopBId = stopB.id;
+    stopCId = stopC.id;
+  });
+
+  afterAll(async () => {
+    await prisma.stop.deleteMany({ where: { id: { in: [stopAId, stopBId, stopCId] } } });
+    await app.close();
+    await prisma.$disconnect();
+  });
+
+  it('le trigger PostGIS a bien renseigné la colonne geog à la création', async () => {
+    const rows = await prisma.$queryRaw<{ geog_is_null: boolean }[]>`
+      SELECT "geog" IS NULL AS geog_is_null FROM "stops" WHERE "id" = ${stopAId}
+    `;
+    expect(rows[0].geog_is_null).toBe(false);
+  });
+
+  it('radius=300 depuis A retourne A et B, triés par distance, pas C', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=300`,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    const ids = body.data.stops.map((s: { id: string }) => s.id);
+
+    expect(ids.indexOf(stopAId)).toBe(0); // A est à distance 0, doit être premier
+    expect(ids).toContain(stopBId);
+    expect(ids).not.toContain(stopCId);
+  });
+
+  it('radius=100 depuis A exclut B (~157m) — la borne de distance est respectée', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100`,
+    });
+    expect(res.statusCode).toBe(200);
+    const ids = res.json().data.stops.map((s: { id: string }) => s.id);
+    expect(ids).toContain(stopAId);
+    expect(ids).not.toContain(stopBId);
+  });
+
+  it('le filtre type=BUS_STOP inclut B et exclut A (STATION)', async () => {
+    // Note : n'affirme pas une égalité stricte de la liste, la zone de test
+    // chevauche désormais de vraies données GTFS (arrêts BUS_STOP réels du
+    // Plateau) — seul le comportement du filtre est vérifié ici.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=300&type=BUS_STOP`,
+    });
+    expect(res.statusCode).toBe(200);
+    const ids = res.json().data.stops.map((s: { id: string }) => s.id);
+    expect(ids).toContain(stopBId);
+    expect(ids).not.toContain(stopAId);
+  });
+
+  it('la distance retournée par PostGIS est cohérente avec le calcul attendu (~157m)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=300`,
+    });
+    const stopB = res.json().data.stops.find((s: { id: string }) => s.id === stopBId);
+    expect(stopB.distanceMeters).toBeGreaterThan(140);
+    expect(stopB.distanceMeters).toBeLessThan(170);
+  });
+
+  it('refuse des coordonnées hors de la zone de service (400)', async () => {
+    // Paris, hors bounding box Côte d'Ivoire
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/stops/nearby?lat=48.8566&lon=2.3522&radius=1000',
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('refuse un rayon supérieur au maximum autorisé (400)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=999999`,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('refuse une requête sans lat/lon (400)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/stops/nearby' });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('GET /stops/:id retourne le détail avec compteurs', async () => {
+    const res = await app.inject({ method: 'GET', url: `/api/stops/${stopAId}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.data.name).toBe('Gare Sud Adjamé [TEST]');
+    expect(body.data._count).toEqual({ favorites: 0, reports: 0 });
+  });
+
+  it('GET /stops/:id inexistant retourne 404', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/stops/00000000-0000-4000-8000-000000000000',
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('GET /stops/:id avec un id mal formé retourne 400 (pas 500)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/stops/pas-un-uuid' });
+    expect(res.statusCode).toBe(400);
+  });
+});

@@ -12,6 +12,7 @@ import { env } from './config/env.js';
 import { globalErrorHandler, ForbiddenError } from './common/errors.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { stopsRoutes } from './modules/stops/stops.routes.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -60,8 +61,9 @@ export async function buildApp() {
 
   await app.register(healthRoutes, { prefix: '/api' });
   await app.register(authRoutes, { prefix: '/api' });
+  await app.register(stopsRoutes, { prefix: '/api' });
 
-  // Modules métier suivants enregistrés ici (stops, reports, favorites, routing)
+  // Modules métier suivants enregistrés ici (reports, favorites, routing)
 
   return app;
 }
