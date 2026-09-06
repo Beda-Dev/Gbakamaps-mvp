@@ -1138,6 +1138,102 @@ textarea.home__report-input {
   font-weight: 600;
 }
 
+/* --- Modération admin : onglets de filtre, actions par ligne, pagination. -- */
+.reports__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.reports__filter {
+  border: 1px solid #ddd;
+  background: white;
+  color: var(--color-text);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.reports__filter:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.reports__filter.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+  font-weight: 600;
+}
+
+.reports__item--admin {
+  align-items: flex-start;
+}
+
+.reports__item--admin .reports__badge {
+  display: inline-block;
+  margin-top: 0.35rem;
+}
+
+.reports__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.reports__action {
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: white;
+}
+
+.reports__action--approve {
+  border: 1px solid #1e7e34;
+  color: #1e7e34;
+}
+
+.reports__action--approve:hover {
+  background: #1e7e34;
+  color: white;
+}
+
+.reports__action--reject {
+  border: 1px solid #ae2012;
+  color: #ae2012;
+}
+
+.reports__action--reject:hover {
+  background: #ae2012;
+  color: white;
+}
+
+.reports__action--resolve {
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+}
+
+.reports__action--resolve:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.reports__pagination {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 @media (min-width: 768px) {
   .reports__card {
     padding: 2rem;

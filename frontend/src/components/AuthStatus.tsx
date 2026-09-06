@@ -34,6 +34,11 @@ export function AuthStatus() {
       <Link className="auth-status__link" to="/reports">
         Signalements
       </Link>
+      {user.role === 'ADMIN' && (
+        <Link className="auth-status__link" to="/admin/reports">
+          Modération
+        </Link>
+      )}
       <span className="auth-status__name" title={user.email}>
         {user.displayName ?? user.email}
       </span>
