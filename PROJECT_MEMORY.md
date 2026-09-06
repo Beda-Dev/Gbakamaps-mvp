@@ -329,6 +329,7 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 17:23 | `63c66dd` | Remplacement OSRM → OpenRouteService, écrit directement | 52 tests backend, 3 profils réellement distincts vérifiés (10,3/24,9/72,6 min sur le même trajet) |
 | 2026-09-06 17:45 | `3494b9e` | Écran favoris, délégué à OpenCode | 2 bugs de layout desktop trouvés et corrigés (chevauchement bouton favori/fermer, puis panneau/topbar) via test navigateur réel |
 | 2026-09-06 18:14 | `be04a90` | Écran itinéraire intégré à la carte, délégué à OpenCode | 17/17 tests, flux complet vérifié en navigateur (760m/2min cohérent, tracé affiché), zéro bug de layout cette fois (panneau en flex-wrap, pas position:absolute) |
+| 2026-09-06 18:2x | `0b30b51` | Écran signalements (formulaire inline + liste), délégué à OpenCode | 25/25 tests, vérification backend curl particulièrement complète par l'agent lui-même (4 cas), flux complet confirmé en navigateur, zéro bug de layout (3 boutons du panneau détail cohabitent) |
 
 ---
 
@@ -406,8 +407,8 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 ### 🔴 Priorité haute (fonctionnalités essentielles manquantes)
 - ~~Écran favoris~~ ✅ fait (commit `3494b9e`)
 - ~~Écran itinéraire~~ ✅ fait (commit `be04a90`) — intégré au panneau détail d'un arrêt plutôt qu'une page séparée, tracé dessiné sur la carte, 3 profils réels
-- Écran signalements (création + liste "mes signalements") — backend prêt et testé, aucun écran **← prochaine tâche**
-- Écran de modération admin (liste des signalements, changement de statut) — backend prêt et testé, aucun écran
+- ~~Écran signalements~~ ✅ fait (commit `0b30b51`) — formulaire inline dans le panneau détail (3e bouton), page /reports pour la liste
+- Écran de modération admin (liste des signalements, changement de statut) — backend prêt et testé, aucun écran **← prochaine tâche, dernière du périmètre MVP haute priorité**
 
 ### 🟠 Priorité moyenne (UX/robustesse)
 - "Suivre mon trajet" (§5bis) : position du passager en direct sur le tracé calculé, alerte à l'approche de l'arrêt/destination — différenciateur validé par la recherche, nécessite l'écran itinéraire d'abord
