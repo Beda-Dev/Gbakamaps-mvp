@@ -171,3 +171,37 @@ export function SearchIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// Icône bus (étapes "en ligne" du planificateur de trajet, phase 2 — modes
+// BUS et GBAKA, un gbaka étant physiquement un minibus), copiée depuis
+// https://lucide.dev/icons/bus, même licence ISC (voir LICENSES-ICONS.md).
+export function BusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <path d="M8 6v6" />
+      <path d="M15 6v6" />
+      <path d="M2 12h19.6" />
+      <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3" />
+      <circle cx="7" cy="18" r="2" />
+      <path d="M9 18h5" />
+      <circle cx="16" cy="18" r="2" />
+    </svg>
+  );
+}
+
+// Icône taxi partagé (étape "en ligne" du planificateur — mode WORO_WORO),
+// copiée depuis https://lucide.dev/icons/car-taxi-front, même licence ISC
+// (voir LICENSES-ICONS.md).
+export function CarTaxiFrontIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <path d="M10 2h4" />
+      <path d="m21 8-2 2-1.5-3.7A2 2 0 0 0 15.646 5H8.4a2 2 0 0 0-1.903 1.257L5 10 3 8" />
+      <path d="M7 14h.01" />
+      <path d="M17 14h.01" />
+      <rect width="18" height="8" x="3" y="10" rx="2" />
+      <path d="M5 18v2" />
+      <path d="M19 18v2" />
+    </svg>
+  );
+}

@@ -19,6 +19,9 @@ export function AuthStatus() {
   if (!user) {
     return (
       <div className="auth-status">
+        <Link className="auth-status__link" to="/planifier">
+          Planifier un trajet
+        </Link>
         <Link className="auth-status__link" to="/login">
           Se connecter
         </Link>
@@ -28,6 +31,9 @@ export function AuthStatus() {
 
   return (
     <div className="auth-status">
+      <Link className="auth-status__link" to="/planifier">
+        Planifier un trajet
+      </Link>
       <Link className="auth-status__link" to="/favorites">
         Favoris
       </Link>

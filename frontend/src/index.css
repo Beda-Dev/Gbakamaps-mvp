@@ -1617,3 +1617,414 @@ textarea.home__report-input {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --- Planificateur de trajet (phase 2, §12.3) — même gabarit de page que
+   .reports/.favorites (carte centrée, largeur max, sur fond neutre). ------ */
+.trip-planner {
+  min-height: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+.trip-planner__card {
+  width: 100%;
+  max-width: 36rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-self: flex-start;
+}
+
+.trip-planner__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.trip-planner__header h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.trip-planner__back {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.trip-planner__back:hover {
+  text-decoration: underline;
+}
+
+.trip-planner__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.trip-field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.trip-field-row .trip-field {
+  flex: 1;
+}
+
+.trip-planner__locate-btn {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  background: white;
+  color: var(--color-primary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trip-planner__locate-btn:hover {
+  background: #eef6f6;
+}
+
+/* --- Champ origine/destination (recherche d'arrêt, réutilise useStopSearch
+   avec une présentation en champ de formulaire plutôt qu'en overlay carte). */
+.trip-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.trip-field__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.trip-field__box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  background: white;
+}
+
+.trip-field__box:focus-within {
+  border-color: var(--color-primary);
+}
+
+.trip-field__icon {
+  color: #888;
+  flex-shrink: 0;
+}
+
+.trip-field__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  font-size: 0.9rem;
+  background: transparent;
+  color: var(--color-text);
+}
+
+.trip-field__value {
+  flex: 1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.trip-field__clear {
+  border: none;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  display: inline-flex;
+  padding: 0.1rem;
+}
+
+.trip-field__results {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.trip-field__message {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.82rem;
+  color: #666;
+}
+
+.trip-field__result {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.trip-field__result:hover {
+  background: #eef6f6;
+}
+
+.trip-planner__filters {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.trip-planner__filter-label {
+  flex: 1;
+  min-width: 8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.trip-planner__filter-label select {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.88rem;
+  background: white;
+  color: var(--color-text);
+}
+
+.trip-planner__submit {
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: white;
+  padding: 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.trip-planner__submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.trip-planner__submit:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.trip-planner__error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ae2012;
+  background: #fdf0ee;
+  border: 1px solid #f3c4bd;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.trip-planner__note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #777;
+  font-style: italic;
+}
+
+.trip-planner__empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #666;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.trip-planner__results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid #eee;
+  padding-top: 1rem;
+}
+
+/* --- Cartes de résultat : apparition douce en cascade (fonctionnelle, pas
+   décorative — indique visuellement l'ordre de classement des itinéraires). */
+@keyframes trip-plan-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.trip-plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.trip-plan-card {
+  border: 1px solid #e3e3e3;
+  border-radius: 10px;
+  overflow: hidden;
+  animation: trip-plan-card-in 0.3s ease both;
+}
+
+.trip-plan-list > .trip-plan-card:nth-child(1) {
+  animation-delay: 0ms;
+}
+.trip-plan-list > .trip-plan-card:nth-child(2) {
+  animation-delay: 60ms;
+}
+.trip-plan-list > .trip-plan-card:nth-child(3) {
+  animation-delay: 120ms;
+}
+.trip-plan-list > .trip-plan-card:nth-child(4) {
+  animation-delay: 180ms;
+}
+.trip-plan-list > .trip-plan-card:nth-child(5) {
+  animation-delay: 240ms;
+}
+
+.trip-plan-card.is-recommended {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.trip-plan-card__summary {
+  width: 100%;
+  text-align: left;
+  background: white;
+  border: none;
+  cursor: pointer;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.trip-plan-card__summary:hover {
+  background: #fafafa;
+}
+
+.trip-plan-card__headline {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.trip-plan-card__badge {
+  background: var(--color-primary);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+}
+
+.trip-plan-card__duration {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.trip-plan-card__distance {
+  font-size: 0.85rem;
+  color: #777;
+}
+
+.trip-plan-card__meta {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  color: #555;
+  flex-wrap: wrap;
+}
+
+.trip-plan-card__steps {
+  margin: 0;
+  padding: 0.4rem 0.9rem 0.85rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px dashed #eee;
+}
+
+.trip-step {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  animation: trip-plan-card-in 0.25s ease both;
+}
+
+.trip-step__icon--walk {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #f1f1f1;
+  color: #666;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trip-step__line-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  white-space: nowrap;
+}
