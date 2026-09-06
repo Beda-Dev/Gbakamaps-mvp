@@ -31,6 +31,9 @@ export function AuthStatus() {
       <Link className="auth-status__link" to="/favorites">
         Favoris
       </Link>
+      <Link className="auth-status__link" to="/reports">
+        Signalements
+      </Link>
       <span className="auth-status__name" title={user.email}>
         {user.displayName ?? user.email}
       </span>

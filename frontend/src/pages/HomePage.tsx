@@ -5,6 +5,12 @@ import { useNearbyStops } from '@/hooks/useNearbyStops';
 import { useAuth } from '@/hooks/useAuth';
 import { useFavorites } from '@/hooks/useFavorites';
 import {
+  REPORT_TYPE_LABELS,
+  reportErrorMessage,
+  useReports,
+  type ReportType,
+} from '@/hooks/useReports';
+import {
   formatRouteDistance,
   formatRouteDuration,
   useRoute,
@@ -16,6 +22,7 @@ import { StopsMap } from '@/components/StopsMap';
 import {
   BikeIcon,
   CarIcon,
+  FlagIcon,
   FootprintsIcon,
   LoaderIcon,
   RouteIcon,
@@ -231,6 +238,179 @@ function RouteToStopButton({
   );
 }
 
+// Bouton "Signaler" du panneau détail, à côté des boutons favori et
+// itinéraire. Même pattern que RouteToStopButton : le formulaire repliable
+// s'affiche SOUS la ligne de titre (flex-wrap sur .home__detail-title, panel
+// en flex-basis 100%) : aucun chevauchement avec le bouton fermer positionné
+// en absolu en haut à droite.
+function ReportToStopButton({ stop }: { stop: Stop }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { createReport } = useReports();
+  const [expanded, setExpanded] = useState(false);
+  const [reportType, setReportType] = useState<ReportType>('INCORRECT_INFO');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  function handleToggle() {
+    // Visiteur anonyme → /login (aucun appel API qui échouerait en 401),
+    // comme le bouton favori.
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setExpanded((prev) => !prev);
+  }
+
+  function handleCancel() {
+    setExpanded(false);
+    setError(null);
+    setSuccess(false);
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const trimmedTitle = title.trim();
+    // Validation client avant envoi (miroir du contrat backend 5-200).
+    if (trimmedTitle.length < 5 || trimmedTitle.length > 200) {
+      setError('Le titre doit contenir entre 5 et 200 caractères.');
+      return;
+    }
+    setIsSending(true);
+    setError(null);
+    try {
+      await createReport({
+        reportType,
+        title: trimmedTitle,
+        // Champ optionnel : on n'envoie rien quand il est vide.
+        ...(description.trim() ? { description: description.trim() } : {}),
+        stopId: stop.id,
+      });
+      setSuccess(true);
+      // Repli automatique après ~2s, formulaire réinitialisé.
+      setTimeout(() => {
+        setExpanded(false);
+        setSuccess(false);
+        setTitle('');
+        setDescription('');
+      }, 2000);
+    } catch (err) {
+      setError(reportErrorMessage(err));
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  return (
+    <>
+      <span className="home__report-wrap">
+        <button
+          type="button"
+          className="home__report-btn"
+          onClick={handleToggle}
+          aria-label="Signaler un problème sur cet arrêt"
+          aria-expanded={expanded}
+          title="Signaler un problème sur cet arrêt"
+        >
+          <FlagIcon width={18} height={18} aria-hidden="true" />
+        </button>
+      </span>
+      {expanded && (
+        <div className="home__report-panel">
+          {success ? (
+            <p className="home__report-success" role="status">
+              Signalement envoyé, merci !
+            </p>
+          ) : (
+            <form className="home__report-form" onSubmit={(e) => void handleSubmit(e)}>
+              <label className="home__report-label" htmlFor="report-type">
+                Type de signalement
+                <select
+                  id="report-type"
+                  className="home__report-input"
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value as ReportType)}
+                  disabled={isSending}
+                >
+                  {(Object.keys(REPORT_TYPE_LABELS) as ReportType[]).map((type) => (
+                    <option key={type} value={type}>
+                      {REPORT_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="home__report-label" htmlFor="report-title">
+                Titre (5-200 caractères)
+                <input
+                  id="report-title"
+                  className="home__report-input"
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  minLength={5}
+                  maxLength={200}
+                  required
+                  disabled={isSending}
+                  placeholder="Ex. Nom d'arrêt incorrect"
+                />
+              </label>
+              <label className="home__report-label" htmlFor="report-description">
+                Description (optionnel)
+                <textarea
+                  id="report-description"
+                  className="home__report-input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  disabled={isSending}
+                  placeholder="Détails utiles pour la modération…"
+                />
+              </label>
+              {error && (
+                <p className="home__report-error" role="alert">
+                  {error}
+                </p>
+              )}
+              <div className="home__report-actions">
+                <button
+                  type="submit"
+                  className="home__report-submit"
+                  disabled={isSending}
+                >
+                  {isSending ? (
+                    <>
+                      <LoaderIcon
+                        className="icon-spin"
+                        width={16}
+                        height={16}
+                        aria-hidden="true"
+                      />
+                      Envoi…
+                    </>
+                  ) : (
+                    'Envoyer'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="home__report-cancel"
+                  onClick={handleCancel}
+                  disabled={isSending}
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function HomePage() {
   const health = useHealth();
   const [center, setCenter] = useState<GeoCenter>(DEFAULT_CENTER);
@@ -361,6 +541,7 @@ export function HomePage() {
                 onRequestLocation={requestLocation}
                 onGeometryChange={setRouteGeometry}
               />
+              <ReportToStopButton key={`report-${selectedStop.id}`} stop={selectedStop} />
             </div>
             <p>{selectedStop.stopType}</p>
             {selectedStop.lines.length > 0 && (

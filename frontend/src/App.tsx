@@ -3,6 +3,7 @@ import { HomePage } from '@/pages/HomePage';
 import { LoginPage } from '@/pages/LoginPage';
 import { SignupPage } from '@/pages/SignupPage';
 import { FavoritesPage } from '@/pages/FavoritesPage';
+import { ReportsPage } from '@/pages/ReportsPage';
 
 // La carte (/) reste publique : aucune redirection forcée vers /login.
 // /login et /signup redirigent vers / quand l'utilisateur est déjà connecté
@@ -13,6 +14,7 @@ const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/signup', element: <SignupPage /> },
   { path: '/favorites', element: <FavoritesPage /> },
+  { path: '/reports', element: <ReportsPage /> },
 ]);
 
 export function App() {

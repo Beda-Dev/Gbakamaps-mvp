@@ -849,6 +849,301 @@ button:disabled {
   padding: 0.5rem 0.75rem;
 }
 
+/* --- Signalement d'un arrêt (bouton + formulaire repliable). ---------------- */
+/* Mêmes dimensions que les boutons favori/itinéraire (44px) : les trois
+   tiennent dans la ligne de titre sans déborder sous .home__detail-close.
+   Le panneau est en flux normal (flex-basis 100%), jamais en absolute. */
+.home__report-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.home__report-btn {
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #555;
+  flex: none;
+}
+
+.home__report-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Panneau repliable : pleine largeur SOUS la ligne de titre (wrap flex). */
+.home__report-panel {
+  flex-basis: 100%;
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home__report-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home__report-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.home__report-input {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 400;
+  min-height: 44px;
+  width: 100%;
+  color: var(--color-text);
+  background: white;
+  font-family: inherit;
+}
+
+.home__report-input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+}
+
+textarea.home__report-input {
+  min-height: 0;
+  resize: vertical;
+}
+
+.home__report-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.home__report-submit {
+  border: none;
+  background: var(--color-primary);
+  color: white;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.home__report-cancel {
+  border: 1px solid #ddd;
+  background: white;
+  color: var(--color-text);
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.home__report-cancel:hover {
+  background: #f0f0f0;
+}
+
+.home__report-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ae2012;
+  background: #fdf0ee;
+  border: 1px solid #f3c4bd;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.home__report-success {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #2a9d8f;
+}
+
+/* --- Page signalements (mobile-first, mêmes tokens que favoris). ------------ */
+.reports {
+  min-height: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+.reports__card {
+  width: 100%;
+  max-width: 40rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-self: flex-start;
+}
+
+.reports__title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.reports__subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.reports__back {
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+  align-self: flex-start;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.reports__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.reports__item {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.reports__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.reports__name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reports__meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.reports__badge {
+  flex: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid transparent;
+}
+
+.reports__badge--pending {
+  color: #9a6a00;
+  background: #fef3d8;
+  border-color: #f0d48a;
+}
+
+.reports__badge--approved {
+  color: #1e7e34;
+  background: #e6f4ea;
+  border-color: #a3d9b1;
+}
+
+.reports__badge--rejected {
+  color: #ae2012;
+  background: #fdf0ee;
+  border-color: #f3c4bd;
+}
+
+.reports__badge--resolved {
+  color: var(--color-primary);
+  background: #eef6f6;
+  border-color: var(--color-primary);
+}
+
+.reports__status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  background: white;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+}
+
+.reports__status--error {
+  color: #ae2012;
+  background: #fdf0ee;
+  border: 1px solid #f3c4bd;
+}
+
+.reports__retry {
+  border: 1px solid var(--color-primary);
+  background: white;
+  color: var(--color-primary);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.reports__retry:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.reports__empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.reports__empty a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+@media (min-width: 768px) {
+  .reports__card {
+    padding: 2rem;
+  }
+}
+
 /* --- Page favoris (mobile-first, mêmes tokens que le reste). ---------------- */
 .favorites {
   min-height: 100%;
