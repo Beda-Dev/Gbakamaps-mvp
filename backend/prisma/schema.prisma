@@ -129,6 +129,15 @@ model TransportLine {
   transportType TransportType
   operator      String?
   fare          Float?
+  // false = valeur indicative (placeholder pré-rempli à l'import à partir
+  // d'une recherche réelle sur les tarifs moyens par mode de transport, cf.
+  // PROJECT_MEMORY.md §12.2), true = définie/confirmée par un administrateur
+  // via PATCH /api/admin/lines/:id. Décision produit du 2026-09-06 : le
+  // tarif par ligne n'est jamais inventé comme une vérité — c'est
+  // l'administrateur qui fait foi, l'estimation n'est qu'un point de
+  // départ affiché comme tel. Le script d'import ne touche JAMAIS `fare`
+  // une fois `fareVerified=true`.
+  fareVerified  Boolean       @default(false)
   active        Boolean       @default(true)
 
   // Référence externe (ex: route_id GTFS) permettant de ré-exécuter le
@@ -155,13 +164,39 @@ model StopLine {
   id        String  @id @default(uuid())
   stopId    String
   lineId    String
+  // Position de l'arrêt dans le sens `direction` de la ligne (0 = premier
+  // arrêt de ce sens). Renseigné depuis stop_times.txt/trips.txt (GTFS
+  // JungleBus) à partir d'un "voyage représentatif" par (ligne, sens) —
+  // voir import-gtfs.ts. Null si l'arrêt n'apparaît que sur une variante de
+  // trajet non retenue comme représentative (rare, cas de branches).
   sequence  Int?
+  // Sens de circulation (repris de trip_headsign, ex: "Gare Sud" — plus
+  // parlant pour l'utilisateur qu'un simple 0/1 direction_id). Deux sens
+  // d'une même ligne peuvent desservir des arrêts entièrement différents
+  // (vérifié empiriquement sur ce jeu de données — pas une supposition),
+  // donc chaque ligne physique peut avoir jusqu'à deux groupes d'arrêts
+  // disjoints partageant le même lineId mais un `direction` différent.
   direction String?
+  // Secondes écoulées depuis le premier arrêt du voyage représentatif de ce
+  // (ligne, sens) — permet d'estimer un temps de trajet ENTRE DEUX ARRÊTS de
+  // la même ligne/sens par simple soustraction, sans dépendre de l'heure
+  // absolue (obsolète depuis 2021, cf. README GTFS) : seul l'écart relatif
+  // entre arrêts est utilisé, jamais l'horaire absolu.
+  secondsFromRouteStart Int?
 
   stop Stop          @relation(fields: [stopId], references: [id], onDelete: Cascade)
   line TransportLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
 
-  @@unique([stopId, lineId])
+  // AVANT le 2026-09-06 : unique([stopId, lineId]) — bug réel découvert en
+  // testant le planificateur de trajet (§12.3) : un arrêt terminus/hub
+  // partagé par les DEUX sens d'une même ligne (cas réel, pas rare — ex.
+  // "Terminus Hôtel de Ville" sur la ligne 25) ne pouvait avoir qu'UNE seule
+  // ligne stockée, le second sens importé écrasant silencieusement le
+  // premier (sequence/direction/secondsFromRouteStart corrompus). D'où
+  // l'ajout de `direction` à la contrainte d'unicité : chaque sens d'une
+  // ligne partageant un arrêt obtient désormais sa propre ligne.
+  @@unique([stopId, lineId, direction])
+  @@index([lineId, direction, sequence])
   @@map("stop_lines")
 }
 

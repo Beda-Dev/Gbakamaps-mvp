@@ -9,15 +9,45 @@
 //   - Idempotent : ré-exécutable sans dupliquer les lignes (upsert par
 //     "externalRef" = route_id GTFS) ni les arrêts (upsert par "osmId",
 //     les stop_id GTFS de ce flux étant directement des IDs de nœuds OSM)
-//   - N'importe QUE la topologie (arrêts, lignes, dessertes) — jamais les
-//     horaires, obsolètes dans cette source (cf. README)
 //   - Transport lagunaire (ferry) explicitement hors périmètre MVP : ignoré
+//
+// Ordonnancement des arrêts par ligne (ajouté phase 2, PROJECT_MEMORY.md
+// §12) : la première version de cet import ne capturait QUE l'ensemble des
+// arrêts desservis par une ligne, sans ordre — `StopLine.sequence`/
+// `direction` existaient dans le schéma mais restaient toujours NULL (bug
+// réel constaté le 2026-09-06, 0% de remplissage sur 10 357 lignes). Or
+// stop_times.txt/trips.txt contiennent bien stop_sequence/direction_id/
+// trip_headsign — cette version les exploite enfin, ce qui rend possible un
+// vrai calcul d'itinéraire multi-modal s'appuyant sur les lignes (§12.3).
+//
+// Vérifié empiriquement (pas une supposition) sur la ligne r5985016 : les
+// deux sens d'une même ligne desservent des arrêts ENTIÈREMENT DIFFÉRENTS
+// (0 arrêt commun sur 31+31) — pas une simple inversion de la même liste.
+// Chaque (route_id, direction_id) est donc traité comme une séquence
+// indépendante, à partir d'un "voyage représentatif" (le plus complet parmi
+// les voyages de ce couple route/sens) pour en tirer l'ordre des arrêts et
+// un temps relatif entre arrêts (secondes depuis le premier arrêt de ce
+// voyage — jamais l'horaire absolu, obsolète depuis 2021, cf. README).
 // =============================================================================
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parse } from 'csv-parse/sync';
 import { prisma } from '../db/prisma.js';
-import type { TransportType } from '../generated/prisma/index.js';
+import { Prisma, type TransportType } from '../generated/prisma/index.js';
+
+// Tarifs indicatifs 2026 (FCFA) — recherche réelle, pas une invention (voir
+// PROJECT_MEMORY.md §12.2, sources budgetabidjan.com) : bus SOTRA facturé
+// 200 ou 500 F selon la ligne (200 = tarif de base le plus courant, retenu
+// comme valeur de départ), gbaka ~250 F, wôrô-wôrô ~500 F. Un administrateur
+// peut et doit corriger cette valeur par ligne réelle via
+// PATCH /api/admin/lines/:id — ce tableau n'est qu'un point de départ,
+// jamais une vérité affichée comme telle (fareVerified=false tant qu'un
+// admin ne l'a pas confirmée).
+const PLACEHOLDER_FARE_FCFA: Partial<Record<TransportType, number>> = {
+  BUS: 200,
+  GBAKA: 250,
+  WORO_WORO: 500,
+};
 
 const DATA_DIR = path.resolve(process.cwd(), 'data/gtfs-abidjan');
 
@@ -38,12 +68,15 @@ interface RouteRow {
 interface TripRow {
   route_id: string;
   trip_id: string;
+  trip_headsign: string;
+  direction_id: string;
 }
 
 interface StopTimeRow {
   trip_id: string;
   stop_id: string;
   stop_sequence: string;
+  arrival_time: string;
 }
 
 interface StopRow {
@@ -81,6 +114,21 @@ function stopTypeFromTransportTypes(types: Set<TransportType>): string {
   return 'BUS_STOP';
 }
 
+// "HH:MM:SS" GTFS (les heures peuvent dépasser 24 pour un service qui
+// continue après minuit — arithmétique simple, pas une heure d'horloge).
+function gtfsTimeToSeconds(time: string): number | null {
+  const parts = time.split(':').map(Number);
+  if (parts.length !== 3 || parts.some((p) => !Number.isFinite(p))) return null;
+  const [h, m, s] = parts;
+  return h * 3600 + m * 60 + s;
+}
+
+interface OrderedStop {
+  stopId: string;
+  sequence: number;
+  secondsFromStart: number | null;
+}
+
 async function main() {
   console.log('📥 Lecture des fichiers GTFS...');
 
@@ -112,27 +160,89 @@ async function main() {
   }
   console.log(`   ${skippedFerryRoutes} lignes de transport lagunaire ignorées (hors périmètre MVP)`);
 
-  // --- Étape 2 : trip_id -> route_id ---
-  const tripToRoute = new Map<string, string>();
+  // --- Étape 2 : trip_id -> { route_id, direction_id, headsign } ---
+  const tripInfo = new Map<string, { routeId: string; direction: string; headsign: string }>();
   for (const trip of trips) {
-    tripToRoute.set(trip.trip_id, trip.route_id);
+    tripInfo.set(trip.trip_id, {
+      routeId: trip.route_id,
+      direction: trip.direction_id ?? '0',
+      headsign: trip.trip_headsign?.trim() || `Sens ${trip.direction_id ?? '0'}`,
+    });
   }
 
-  // --- Étape 3 : stop_id -> ensemble des route_id qui le desservent ---
-  const stopToRoutes = new Map<string, Set<string>>();
+  // --- Étape 3 : stop_times regroupés par trip_id (triés par séquence) ---
+  const stopTimesByTrip = new Map<string, StopTimeRow[]>();
   for (const st of stopTimes) {
-    const routeId = tripToRoute.get(st.trip_id);
-    if (!routeId) continue;
-    const type = routeTransportType.get(routeId);
+    if (!stopTimesByTrip.has(st.trip_id)) stopTimesByTrip.set(st.trip_id, []);
+    stopTimesByTrip.get(st.trip_id)!.push(st);
+  }
+  for (const rows of stopTimesByTrip.values()) {
+    rows.sort((a, b) => Number(a.stop_sequence) - Number(b.stop_sequence));
+  }
+
+  // --- Étape 4 : stop_id -> ensemble des route_id qui le desservent (TOUS
+  // les voyages, pas seulement le représentatif — garantit qu'aucune
+  // desserte connue avant cette réécriture ne disparaît). ---
+  const stopToRoutes = new Map<string, Set<string>>();
+  for (const [tripId, rows] of stopTimesByTrip) {
+    const info = tripInfo.get(tripId);
+    if (!info) continue;
+    const type = routeTransportType.get(info.routeId);
     if (type === null) continue; // ligne ferry ignorée
 
-    if (!stopToRoutes.has(st.stop_id)) {
-      stopToRoutes.set(st.stop_id, new Set());
+    for (const row of rows) {
+      if (!stopToRoutes.has(row.stop_id)) stopToRoutes.set(row.stop_id, new Set());
+      stopToRoutes.get(row.stop_id)!.add(info.routeId);
     }
-    stopToRoutes.get(st.stop_id)!.add(routeId);
   }
 
-  // --- Étape 4 : upsert des lignes de transport (hors ferry) ---
+  // --- Étape 5 : pour chaque (route_id, direction_id), choisir le voyage
+  // représentatif (le plus complet = le plus grand nombre d'arrêts) et en
+  // extraire la séquence ordonnée + le temps relatif entre arrêts. ---
+  interface RouteDirectionKey {
+    routeId: string;
+    direction: string;
+    headsign: string;
+  }
+  const bestTripByRouteDirection = new Map<string, { tripId: string; stopCount: number; info: RouteDirectionKey }>();
+
+  for (const [tripId, rows] of stopTimesByTrip) {
+    const info = tripInfo.get(tripId);
+    if (!info) continue;
+    if (routeTransportType.get(info.routeId) === null) continue; // ferry
+
+    const key = `${info.routeId}::${info.direction}`;
+    const existing = bestTripByRouteDirection.get(key);
+    if (!existing || rows.length > existing.stopCount) {
+      bestTripByRouteDirection.set(key, {
+        tripId,
+        stopCount: rows.length,
+        info: { routeId: info.routeId, direction: info.headsign, headsign: info.headsign },
+      });
+    }
+  }
+
+  // routeId -> direction -> arrêts ordonnés avec temps relatif
+  const orderedStopsByRouteDirection = new Map<string, OrderedStop[]>();
+  for (const [key, best] of bestTripByRouteDirection) {
+    const rows = stopTimesByTrip.get(best.tripId) ?? [];
+    const firstTime = rows.length > 0 ? gtfsTimeToSeconds(rows[0].arrival_time) : null;
+    const ordered: OrderedStop[] = rows.map((row) => {
+      const t = gtfsTimeToSeconds(row.arrival_time);
+      return {
+        stopId: row.stop_id,
+        sequence: Number(row.stop_sequence),
+        secondsFromStart: t !== null && firstTime !== null ? t - firstTime : null,
+      };
+    });
+    orderedStopsByRouteDirection.set(key, ordered);
+  }
+
+  console.log(
+    `   ${bestTripByRouteDirection.size} sens de ligne identifiés (voyages représentatifs choisis)`
+  );
+
+  // --- Étape 6 : upsert des lignes de transport (hors ferry) ---
   console.log('📤 Import des lignes de transport...');
   const routeIdToLineId = new Map<string, string>();
   let linesCreated = 0;
@@ -146,7 +256,7 @@ async function main() {
       where: { externalRef: route.route_id },
     });
 
-    const data = {
+    const data: Prisma.TransportLineUncheckedCreateInput = {
       name: route.route_long_name || route.route_short_name || route.route_id,
       shortName: route.route_short_name || null,
       color: route.route_color ? `#${route.route_color}` : undefined,
@@ -154,6 +264,15 @@ async function main() {
       operator: route.agency_id,
       externalRef: route.route_id,
     };
+
+    // Tarif : jamais écrasé une fois défini/confirmé par un administrateur
+    // (PATCH /api/admin/lines/:id met fareVerified=true). Sinon, valeur
+    // indicative de départ tirée d'une recherche réelle (pas inventée),
+    // que l'import peut continuer de rafraîchir tant qu'aucun admin n'a
+    // statué — voir PLACEHOLDER_FARE_FCFA plus haut.
+    if (!existing?.fareVerified) {
+      data.fare = PLACEHOLDER_FARE_FCFA[transportType] ?? null;
+    }
 
     const line = existing
       ? await prisma.transportLine.update({ where: { id: existing.id }, data })
@@ -165,7 +284,7 @@ async function main() {
   }
   console.log(`   ${linesCreated} lignes créées, ${linesUpdated} mises à jour`);
 
-  // --- Étape 5 : upsert des arrêts ---
+  // --- Étape 7 : upsert des arrêts ---
   console.log('📤 Import des arrêts...');
   let stopsCreated = 0;
   let stopsUpdated = 0;
@@ -218,27 +337,77 @@ async function main() {
     `   ${stopsCreated} arrêts créés, ${stopsUpdated} mis à jour, ${stopsSkippedInvalidCoords} ignorés (coordonnées invalides)`
   );
 
-  // --- Étape 6 : associations arrêt <-> ligne ---
+  // --- Étape 8 : associations arrêt <-> ligne, avec ordre/temps quand
+  // disponibles (voyage représentatif), sinon association simple (comme
+  // avant cette réécriture — aucune desserte connue ne disparaît). ---
   console.log('📤 Import des dessertes (arrêt <-> ligne)...');
-  let associationsCreated = 0;
+  let associationsWithOrder = 0;
+  let associationsWithoutOrder = 0;
 
-  for (const [stopId, routeIds] of stopToRoutes) {
-    const dbStopId = gtfsStopIdToDbId.get(stopId);
+  // D'abord les dessertes ordonnées (voyages représentatifs).
+  const orderedPairsHandled = new Set<string>(); // `${gtfsStopId}::${routeId}`
+  for (const [key, ordered] of orderedStopsByRouteDirection) {
+    const [routeId] = key.split('::');
+    const dbLineId = routeIdToLineId.get(routeId);
+    if (!dbLineId) continue;
+    const best = bestTripByRouteDirection.get(key);
+    // `best` existe toujours ici : `orderedStopsByRouteDirection` est
+    // construit en itérant `bestTripByRouteDirection` (mêmes clés), voir
+    // plus haut. `direction` n'est donc jamais null pour un arrêt ordonné —
+    // seule la desserte "sans ordre" (plus bas) peut avoir direction=null.
+    const direction = best!.info.headsign;
+
+    for (const stop of ordered) {
+      const dbStopId = gtfsStopIdToDbId.get(stop.stopId);
+      if (!dbStopId) continue;
+
+      await prisma.stopLine.upsert({
+        where: { stopId_lineId_direction: { stopId: dbStopId, lineId: dbLineId, direction } },
+        update: {
+          sequence: stop.sequence,
+          secondsFromRouteStart: stop.secondsFromStart,
+        },
+        create: {
+          stopId: dbStopId,
+          lineId: dbLineId,
+          sequence: stop.sequence,
+          direction,
+          secondsFromRouteStart: stop.secondsFromStart,
+        },
+      });
+      associationsWithOrder++;
+      orderedPairsHandled.add(`${stop.stopId}::${routeId}`);
+    }
+  }
+
+  // Puis les dessertes restantes (arrêts desservis seulement par une
+  // variante de trajet non retenue comme représentative) sans ordre.
+  for (const [gtfsStopId, routeIds] of stopToRoutes) {
+    const dbStopId = gtfsStopIdToDbId.get(gtfsStopId);
     if (!dbStopId) continue;
 
     for (const routeId of routeIds) {
+      if (orderedPairsHandled.has(`${gtfsStopId}::${routeId}`)) continue;
       const dbLineId = routeIdToLineId.get(routeId);
       if (!dbLineId) continue;
 
-      await prisma.stopLine.upsert({
-        where: { stopId_lineId: { stopId: dbStopId, lineId: dbLineId } },
-        update: {},
-        create: { stopId: dbStopId, lineId: dbLineId },
+      // Upsert manuel plutôt que `prisma.stopLine.upsert` : le type généré
+      // pour la clé composite `stopId_lineId_direction` n'accepte pas
+      // `direction: null` proprement (limite connue de Prisma sur les
+      // colonnes nullables dans un index composite) — cas rare (~1,7% des
+      // dessertes), un aller-retour supplémentaire est sans conséquence ici.
+      const existingUnordered = await prisma.stopLine.findFirst({
+        where: { stopId: dbStopId, lineId: dbLineId, direction: null },
       });
-      associationsCreated++;
+      if (!existingUnordered) {
+        await prisma.stopLine.create({ data: { stopId: dbStopId, lineId: dbLineId } });
+      }
+      associationsWithoutOrder++;
     }
   }
-  console.log(`   ${associationsCreated} dessertes synchronisées`);
+  console.log(
+    `   ${associationsWithOrder} dessertes avec ordre/temps relatif, ${associationsWithoutOrder} sans ordre (variantes de trajet secondaires)`
+  );
 
   console.log('✅ Import terminé.');
 }
