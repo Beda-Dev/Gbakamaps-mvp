@@ -1,8 +1,27 @@
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  optimizeDeps: {
+    // maplibre-gl charge son moteur de rendu dans un Web Worker. Le
+    // pré-bundling de Vite casse ce chargement en dev (404 sur
+    // maplibre-gl-worker.mjs) : la carte reste vide, l'événement 'load'
+    // n'est jamais émis et aucun marqueur n'est ajouté. L'exclure du
+    // pré-bundling règle le problème (le build de production, lui,
+    // empaquette le worker correctement).
+    exclude: ['maplibre-gl'],
+  },
+  resolve: {
+    alias: {
+      // Vite ne lit PAS les `paths` de tsconfig.json : sans cet alias,
+      // `tsc` passe mais le serveur de dev renvoie 500 sur tout module
+      // important `@/...` au runtime (et le build produit un bundle
+      // cassé en traitant ces imports comme des dépendances externes).
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   plugins: [
     react(),
     VitePWA({

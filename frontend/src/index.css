@@ -22,6 +22,29 @@ body {
   color: var(--color-text);
 }
 
+/* Transitions douces génériques sur les boutons. */
+button {
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.15s ease;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .home {
   display: flex;
   flex-direction: column;
@@ -37,12 +60,41 @@ body {
   border-bottom: 1px solid #eee;
 }
 
+.home__banner:empty {
+  display: none;
+}
+
+.home__banner-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .home__banner--ok {
   color: #2a9d8f;
 }
 
 .home__banner--error {
   color: #ae2012;
+}
+
+.home__retry-btn {
+  border: 1px solid var(--color-primary);
+  background: white;
+  color: var(--color-primary);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.home__retry-btn:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.home__retry-btn:active {
+  transform: scale(0.97);
 }
 
 .home__map {
@@ -53,23 +105,52 @@ body {
 
 .home__status {
   position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
+  top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  left: calc(0.5rem + env(safe-area-inset-left, 0px));
   z-index: 10;
   background: white;
   padding: 0.4rem 0.8rem;
   border-radius: 6px;
   font-size: 0.85rem;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: calc(100% - 1rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
 }
 
 .home__status--error {
   color: #ae2012;
 }
 
+/* Petit spinner CSS réutilisable (cohérent avec --color-primary). */
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  border: 2px solid rgba(10, 147, 150, 0.25);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner--small {
+  font-size: 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .home__count {
   text-align: center;
   padding: 0.5rem;
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(0.5rem + env(safe-area-inset-left, 0px));
+  padding-right: calc(0.5rem + env(safe-area-inset-right, 0px));
   margin: 0;
   font-size: 0.8rem;
   color: #555;
@@ -77,6 +158,7 @@ body {
   border-top: 1px solid #eee;
 }
 
+/* --- Panneau détail : bottom-sheet mobile, transition slide + fade. -------- */
 .home__detail {
   position: absolute;
   bottom: 0;
@@ -84,11 +166,51 @@ body {
   right: 0;
   background: white;
   padding: 1rem 1.25rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(1.25rem + env(safe-area-inset-left, 0px));
+  padding-right: calc(1.25rem + env(safe-area-inset-right, 0px));
   border-radius: 16px 16px 0 0;
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
   z-index: 20;
   max-height: 40%;
   overflow-y: auto;
+  transform: translateY(110%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform 0.3s ease,
+    opacity 0.25s ease,
+    visibility 0s linear 0.3s;
+}
+
+.home__detail.is-open {
+  transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    transform 0.3s ease,
+    opacity 0.25s ease;
+}
+
+/* Desktop : panneau latéral fixe à droite au lieu du bottom-sheet. */
+@media (min-width: 768px) {
+  .home__detail {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 0;
+    width: 360px;
+    max-height: none;
+    border-radius: 0;
+    box-shadow: -2px 0 12px rgba(0, 0, 0, 0.15);
+    transform: translateX(110%);
+  }
+
+  .home__detail.is-open {
+    transform: translateX(0);
+  }
 }
 
 .home__detail-close {
@@ -99,6 +221,17 @@ body {
   background: none;
   font-size: 1.1rem;
   cursor: pointer;
+  color: var(--color-text);
+  border-radius: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home__detail-close:hover {
+  background: #f0f0f0;
 }
 
 .home__lines {
@@ -118,8 +251,8 @@ body {
 
 .map-style-switcher {
   position: absolute;
-  top: 0.5rem;
-  left: 0.5rem;
+  top: calc(0.5rem + env(safe-area-inset-top, 0px));
+  left: calc(0.5rem + env(safe-area-inset-left, 0px));
   z-index: 10;
   display: flex;
   gap: 0.25rem;
@@ -127,6 +260,8 @@ body {
   padding: 0.25rem;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  max-width: calc(100% - 1rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  flex-wrap: wrap;
 }
 
 .map-style-switcher button {
@@ -137,9 +272,188 @@ body {
   font-size: 0.75rem;
   cursor: pointer;
   color: #333;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    opacity 0.2s ease;
+}
+
+.map-style-switcher button:hover {
+  background: #eef6f6;
 }
 
 .map-style-switcher button.is-active {
   background: var(--color-primary);
   color: white;
+}
+
+/* --- Bouton "recentrer sur ma position" flottant. -------------------------- */
+.map-recenter-btn {
+  position: absolute;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  right: calc(1rem + env(safe-area-inset-right, 0px));
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #e3e3e3;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  font-size: 1.3rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text);
+}
+
+.map-recenter-btn:hover {
+  background: #f2fafa;
+}
+
+.map-recenter-btn:active {
+  transform: scale(0.95);
+}
+
+.map-recenter-btn.is-loading {
+  cursor: wait;
+}
+
+/* --- Marqueur position utilisateur : point bleu + halo. -------------------- */
+.user-location-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1a73e8;
+  border: 3px solid white;
+  box-shadow: 0 0 0 6px rgba(26, 115, 232, 0.2);
+  position: relative;
+}
+
+.user-location-dot::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  border: 2px solid rgba(26, 115, 232, 0.4);
+  animation: halo-pulse 2s ease-out infinite;
+}
+
+@keyframes halo-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* --- Animation d'entrée des marqueurs d'arrêts (scale/fade). --------------- */
+/* Le positionnement MapLibre vit sur le wrapper : on anime le <svg> interne. */
+.stop-marker svg {
+  animation: marker-pop 0.35s ease both;
+  transform-origin: bottom center;
+}
+
+@keyframes marker-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* --- Légende des couleurs, encart discret en coin de carte. ----------------- */
+.map-legend {
+  position: absolute;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  left: calc(0.5rem + env(safe-area-inset-left, 0px));
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  font-size: 0.75rem;
+  padding: 0.35rem 0.6rem;
+  max-width: 200px;
+}
+
+.map-legend summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #333;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.map-legend ul {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #333;
+}
+
+.map-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* --- Zones tactiles 44×44 sur mobile. -------------------------------------- */
+@media (max-width: 767px) {
+  /* Quand le bottom-sheet est ouvert, il recouvre le bas de la carte :
+     on remonte les contrôles au-dessus plutôt que de les laisser
+     inaccessibles derrière (constaté visuellement en test). */
+  .home.has-detail .map-recenter-btn,
+  .home.has-detail .map-legend {
+    bottom: calc(42% + 0.5rem);
+    transition: bottom 0.3s ease;
+  }
+
+  .map-recenter-btn,
+  .map-legend {
+    transition: bottom 0.3s ease;
+  }
+
+  .map-style-switcher button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .home__retry-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .map-legend summary {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* --- Accessibilité : réduit les animations si demandé au niveau OS. -------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -13,6 +13,8 @@ dist/
 build/
 backend/dist/
 frontend/dist/
+# généré par vite-plugin-pwa en mode dev
+frontend/dev-dist/
 
 # prisma
 backend/src/generated/

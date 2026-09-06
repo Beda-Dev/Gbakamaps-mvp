@@ -48,7 +48,7 @@ function resolveMapStyle(styleId: MapStyleId): string | StyleSpecification {
   return `https://api.maptiler.com/maps/${styleId}/style.json?key=${MAPTILER_KEY}`;
 }
 
-const STOP_TYPE_COLORS: Record<string, string> = {
+export const STOP_TYPE_COLORS: Record<string, string> = {
   GBAKA_STOP: '#EE9B00',
   WORO_WORO_STOP: '#CA6702',
   TAXI_STAND: '#9B2226',
@@ -58,16 +58,37 @@ const STOP_TYPE_COLORS: Record<string, string> = {
   STATION: '#005F73',
 };
 
+const STOP_TYPE_LABELS: Record<string, string> = {
+  BUS_STOP: 'Bus',
+  GBAKA_STOP: 'Gbaka',
+  WORO_WORO_STOP: 'Woro-woro',
+  TAXI_STAND: 'Taxi',
+  MOTO_TAXI_STAND: 'Moto-taxi',
+  STATION: 'Gare / Station',
+  PLATFORM: 'Quai',
+};
+
 interface StopsMapProps {
   center: { lat: number; lon: number };
   stops: Stop[];
   onSelectStop?: (stop: Stop) => void;
+  userLocation?: { lat: number; lon: number } | null;
+  isLocating?: boolean;
+  onRecenter?: () => void;
 }
 
-export function StopsMap({ center, stops, onSelectStop }: StopsMapProps) {
+export function StopsMap({
+  center,
+  stops,
+  onSelectStop,
+  userLocation,
+  isLocating,
+  onRecenter,
+}: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
+  const userMarkerRef = useRef<Marker | null>(null);
   const [styleId, setStyleId] = useState<MapStyleId>(DEFAULT_STYLE);
   const [mapReady, setMapReady] = useState(false);
 
@@ -85,6 +106,8 @@ export function StopsMap({ center, stops, onSelectStop }: StopsMapProps) {
     mapRef.current = map;
 
     return () => {
+      userMarkerRef.current?.remove();
+      userMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
@@ -115,6 +138,10 @@ export function StopsMap({ center, stops, onSelectStop }: StopsMapProps) {
         .setPopup(new Popup({ offset: 12 }).setText(stop.name ?? 'Arrêt sans nom'))
         .addTo(map);
 
+      // Classe pour l'animation d'entrée (le positionnement MapLibre vit sur
+      // l'élément lui-même, donc le CSS anime le <svg> interne, pas le wrapper).
+      marker.getElement().classList.add('stop-marker');
+
       if (onSelectStop) {
         marker.getElement().addEventListener('click', () => onSelectStop(stop));
       }
@@ -126,6 +153,27 @@ export function StopsMap({ center, stops, onSelectStop }: StopsMapProps) {
       markersRef.current = [];
     };
   }, [stops, onSelectStop, mapReady]);
+
+  // Marqueur de la position utilisateur (point bleu + halo, style Maps).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !userLocation) return;
+
+    const el = document.createElement('div');
+    el.className = 'user-location-dot';
+    el.setAttribute('aria-label', 'Ma position');
+
+    userMarkerRef.current?.remove();
+    userMarkerRef.current = new Marker({ element: el }).setLngLat([
+      userLocation.lon,
+      userLocation.lat,
+    ]).addTo(map);
+
+    return () => {
+      userMarkerRef.current?.remove();
+      userMarkerRef.current = null;
+    };
+  }, [userLocation, mapReady]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -144,6 +192,37 @@ export function StopsMap({ center, stops, onSelectStop }: StopsMapProps) {
           ))}
         </div>
       )}
+      {onRecenter && (
+        <button
+          type="button"
+          className={`map-recenter-btn${isLocating ? ' is-loading' : ''}`}
+          onClick={onRecenter}
+          disabled={isLocating}
+          aria-label="Recentrer sur ma position"
+          title="Recentrer sur ma position"
+        >
+          {isLocating ? (
+            <span className="spinner spinner--small" aria-hidden="true" />
+          ) : (
+            <span aria-hidden="true">◎</span>
+          )}
+        </button>
+      )}
+      <details className="map-legend">
+        <summary>Légende</summary>
+        <ul>
+          {Object.entries(STOP_TYPE_COLORS).map(([type, color]) => (
+            <li key={type}>
+              <span
+                className="map-legend-dot"
+                style={{ backgroundColor: color }}
+                aria-hidden="true"
+              />
+              {STOP_TYPE_LABELS[type] ?? type}
+            </li>
+          ))}
+        </ul>
+      </details>
     </div>
   );
 }
