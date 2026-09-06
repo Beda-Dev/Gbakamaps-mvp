@@ -182,6 +182,30 @@ button:disabled {
   }
 }
 
+/* Utilitaire standard : visible pour un lecteur d'écran, invisible à l'oeil
+   — jamais `display:none` qui masquerait aussi le contenu aux techno. d'aide. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.home__radius-select {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  background: white;
+}
+
 .home__count {
   text-align: center;
   padding: 0.5rem;

@@ -37,6 +37,11 @@ import type { Stop } from '@/lib/api/types';
 // Plateau, Abidjan — point de départ par défaut avant géolocalisation.
 const DEFAULT_CENTER = { lat: 5.32, lon: -4.02 };
 
+// Rayons de recherche proposés (demande explicite, §12.3 "Rayons et
+// proximité") — bornes cohérentes avec celles acceptées par
+// GET /api/stops/nearby (100-20000m).
+const SEARCH_RADIUS_OPTIONS = [500, 1000, 1500, 2000, 5000] as const;
+
 interface GeoCenter {
   lat: number;
   lon: number;
@@ -542,7 +547,12 @@ export function HomePage() {
   const [userLocation, setUserLocation] = useState<GeoCenter | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [showOkBanner, setShowOkBanner] = useState(true);
-  const stops = useNearbyStops(center.lat, center.lon, 1500);
+  // Rayon de recherche réglable par l'utilisateur (demande explicite,
+  // PROJECT_MEMORY.md §12.3 "Rayons et proximité") — 1500m repris comme
+  // valeur de départ (comportement historique de cette page, inchangé par
+  // défaut).
+  const [searchRadius, setSearchRadius] = useState(1500);
+  const stops = useNearbyStops(center.lat, center.lon, searchRadius);
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   // Géométrie du tracé d'itinéraire affichée sur la carte (null = aucun).
   const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | null>(null);
@@ -716,7 +726,21 @@ export function HomePage() {
 
       {stops.data && (
         <p className="home__count">
-          {stops.data.count} arrêt{stops.data.count > 1 ? 's' : ''} dans un rayon de {stops.data.radius}m
+          {stops.data.count} arrêt{stops.data.count > 1 ? 's' : ''} dans un rayon de{' '}
+          <label className="home__radius-label">
+            <span className="sr-only">Rayon de recherche</span>
+            <select
+              className="home__radius-select"
+              value={searchRadius}
+              onChange={(e) => setSearchRadius(Number(e.target.value))}
+            >
+              {SEARCH_RADIUS_OPTIONS.map((r) => (
+                <option key={r} value={r}>
+                  {r >= 1000 ? `${r / 1000} km` : `${r} m`}
+                </option>
+              ))}
+            </select>
+          </label>
         </p>
       )}
       </main>
