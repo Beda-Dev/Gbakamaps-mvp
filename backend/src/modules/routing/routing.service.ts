@@ -128,7 +128,12 @@ async function callOrs(
 // pour cette raison). Optionnel : n'est tenté que si GRAPHHOPPER_API_KEY est
 // configurée.
 // -----------------------------------------------------------------------------
-const GRAPHHOPPER_VEHICLE: Record<RouteProfile, string> = {
+// Noms de profils vérifiés contre la vraie spec OpenAPI GraphHopper
+// (openapi.json fourni par l'utilisateur le 2026-09-06, section "Map Data
+// and Routing Profiles") — le paramètre de requête s'appelle `profile`,
+// PAS `vehicle` (nom d'une version antérieure de leur API, erreur trouvée
+// et corrigée grâce à cette vérification contre la doc officielle réelle).
+const GRAPHHOPPER_PROFILE: Record<RouteProfile, string> = {
   'driving-car': 'car',
   'cycling-regular': 'bike',
   'foot-walking': 'foot',
@@ -150,7 +155,7 @@ async function callGraphHopper(
   profile: RouteProfile
 ): Promise<RouteResult[]> {
   const params = new URLSearchParams({
-    vehicle: GRAPHHOPPER_VEHICLE[profile],
+    profile: GRAPHHOPPER_PROFILE[profile],
     points_encoded: 'false',
     locale: 'fr',
     key: apiKey,
