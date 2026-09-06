@@ -2028,3 +2028,15 @@ textarea.home__report-input {
   padding: 0.25rem 0.5rem;
   white-space: nowrap;
 }
+
+/* --- Repère de chargement entre deux pages découpées en chunks séparés
+   (code-splitting, phase 2, §9) — évite un écran blanc pendant le
+   téléchargement du chunk de la page ciblée. ------------------------------ */
+.route-fallback {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+  background: var(--color-bg);
+}
