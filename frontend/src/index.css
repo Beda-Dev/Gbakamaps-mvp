@@ -671,6 +671,11 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* Le panneau itinéraire repliable (.home__route-panel, flex-basis 100%)
+     passe à la ligne sous les boutons grâce à ce wrap — la ligne de titre
+     elle-même (h2 + favori + itinéraire) garde sa hauteur, donc le retrait
+     ci-dessous continue de dégager le bouton fermer en absolu. */
+  flex-wrap: wrap;
   /* Dégage la zone occupée par .home__detail-close (position absolute,
      right:0.75rem, 44px de large) — sans cette marge, le bouton favori
      (44px, en fin de ligne) se retrouve exactement sous le bouton fermer
@@ -719,6 +724,129 @@ button:disabled {
 .home__favorite-error {
   font-size: 0.8rem;
   color: #ae2012;
+}
+
+/* --- Itinéraire vers l'arrêt (bouton + panneau repliable). ----------------- */
+/* Le bouton reprend les dimensions du bouton favori (44px) : les deux
+   tiennent dans la ligne de titre sans déborder sous .home__detail-close
+   (qui occupe 12–56px depuis le bord droit, les boutons s'arrêtant à 60px
+   grâce au padding-right de .home__detail-title). */
+.home__route-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.home__route-btn {
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #555;
+  flex: none;
+}
+
+.home__route-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.home__route-btn.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Panneau repliable : pleine largeur SOUS la ligne de titre (wrap flex). */
+.home__route-panel {
+  flex-basis: 100%;
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.home__route-profiles {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.home__route-profile {
+  flex: 1;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 8px;
+  padding: 0.5rem 0.4rem;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.home__route-profile:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.home__route-profile.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: #eef6f6;
+}
+
+.home__route-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #555;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.home__route-result {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.home__route-clear {
+  border: 1px solid #ddd;
+  background: white;
+  color: var(--color-text);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.home__route-clear:hover {
+  background: #f0f0f0;
+}
+
+.home__route-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #ae2012;
+  background: #fdf0ee;
+  border: 1px solid #f3c4bd;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
 }
 
 /* --- Page favoris (mobile-first, mêmes tokens que le reste). ---------------- */

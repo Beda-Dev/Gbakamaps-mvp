@@ -4,9 +4,24 @@ import { useHealth } from '@/hooks/useHealth';
 import { useNearbyStops } from '@/hooks/useNearbyStops';
 import { useAuth } from '@/hooks/useAuth';
 import { useFavorites } from '@/hooks/useFavorites';
+import {
+  formatRouteDistance,
+  formatRouteDuration,
+  useRoute,
+  type RouteGeometry,
+  type RouteProfile,
+} from '@/hooks/useRoute';
 import { AuthStatus } from '@/components/AuthStatus';
 import { StopsMap } from '@/components/StopsMap';
-import { LoaderIcon, StarIcon, XIcon } from '@/components/icons';
+import {
+  BikeIcon,
+  CarIcon,
+  FootprintsIcon,
+  LoaderIcon,
+  RouteIcon,
+  StarIcon,
+  XIcon,
+} from '@/components/icons';
 import type { Stop } from '@/lib/api/types';
 
 // Plateau, Abidjan — point de départ par défaut avant géolocalisation.
@@ -76,6 +91,146 @@ function DetailFavoriteButton({ stop }: { stop: Stop }) {
   );
 }
 
+const ROUTE_PROFILES = [
+  { id: 'driving-car', label: 'Voiture', Icon: CarIcon },
+  { id: 'cycling-regular', label: 'Vélo', Icon: BikeIcon },
+  { id: 'foot-walking', label: 'Marche', Icon: FootprintsIcon },
+] as const;
+
+// Bouton "Itinéraire" du panneau détail, à côté du bouton favori. Le panneau
+// repliable (sélecteur de profil + résultat) s'affiche SOUS la ligne de titre
+// (flex-wrap sur .home__detail-title, panel en flex-basis 100%) : aucun
+// chevauchement avec le bouton fermer positionné en absolu en haut à droite.
+function RouteToStopButton({
+  stop,
+  userLocation,
+  isLocating,
+  onRequestLocation,
+  onGeometryChange,
+}: {
+  stop: Stop;
+  userLocation: { lat: number; lon: number } | null;
+  isLocating: boolean;
+  onRequestLocation: () => void;
+  onGeometryChange: (geometry: RouteGeometry | null) => void;
+}) {
+  const route = useRoute();
+  const [expanded, setExpanded] = useState(false);
+  const [lastProfile, setLastProfile] = useState<RouteProfile | null>(null);
+
+  function handleToggle() {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setExpanded(true);
+    // Sans position connue, on retente la géolocalisation au lieu de bloquer
+    // silencieusement — le panneau affichera l'attente ou un message clair.
+    if (!userLocation) onRequestLocation();
+  }
+
+  async function handleProfile(profile: RouteProfile) {
+    if (!userLocation) {
+      onRequestLocation();
+      return;
+    }
+    setLastProfile(profile);
+    try {
+      const result = await route.compute({
+        from: userLocation,
+        to: { lat: stop.lat, lon: stop.lon },
+        profile,
+      });
+      onGeometryChange(result.geometry);
+    } catch {
+      // L'erreur traduite est exposée via route.error, affichée ci-dessous.
+      onGeometryChange(null);
+    }
+  }
+
+  function handleClear() {
+    onGeometryChange(null);
+    route.reset();
+  }
+
+  return (
+    <>
+      <span className="home__route-wrap">
+        <button
+          type="button"
+          className={`home__route-btn${route.data ? ' is-active' : ''}`}
+          onClick={handleToggle}
+          disabled={route.isPending}
+          aria-label="Itinéraire vers cet arrêt"
+          aria-expanded={expanded}
+          title="Itinéraire vers cet arrêt"
+        >
+          {route.isPending ? (
+            <LoaderIcon className="icon-spin" width={18} height={18} aria-hidden="true" />
+          ) : (
+            <RouteIcon width={18} height={18} aria-hidden="true" />
+          )}
+        </button>
+      </span>
+      {expanded && (
+        <div className="home__route-panel">
+          {!userLocation ? (
+            isLocating ? (
+              <p className="home__route-hint" role="status">
+                <span className="spinner spinner--small" aria-hidden="true" />
+                Localisation en cours…
+              </p>
+            ) : (
+              <p className="home__route-hint" role="alert">
+                Activez la géolocalisation pour calculer un itinéraire.
+                <button type="button" className="home__retry-btn" onClick={onRequestLocation}>
+                  Relancer
+                </button>
+              </p>
+            )
+          ) : (
+            <div className="home__route-profiles" role="group" aria-label="Mode de transport">
+              {ROUTE_PROFILES.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`home__route-profile${lastProfile === id ? ' is-active' : ''}`}
+                  onClick={() => void handleProfile(id)}
+                  disabled={route.isPending}
+                  aria-pressed={lastProfile === id}
+                >
+                  <Icon width={18} height={18} aria-hidden="true" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {route.isPending && (
+            <p className="home__route-hint" role="status">
+              <span className="spinner spinner--small" aria-hidden="true" />
+              Calcul de l’itinéraire…
+            </p>
+          )}
+          {route.data && !route.isPending && (
+            <p className="home__route-result" role="status">
+              {formatRouteDistance(route.data.distanceMeters)} •{' '}
+              {formatRouteDuration(route.data.durationSeconds)}
+              <button type="button" className="home__route-clear" onClick={handleClear}>
+                Effacer l’itinéraire
+              </button>
+            </p>
+          )}
+          {route.error && (
+            <p className="home__route-error" role="alert">
+              {route.error}
+            </p>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function HomePage() {
   const health = useHealth();
   const [center, setCenter] = useState<GeoCenter>(DEFAULT_CENTER);
@@ -84,6 +239,8 @@ export function HomePage() {
   const [showOkBanner, setShowOkBanner] = useState(true);
   const stops = useNearbyStops(center.lat, center.lon, 1500);
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
+  // Géométrie du tracé d'itinéraire affichée sur la carte (null = aucun).
+  const [routeGeometry, setRouteGeometry] = useState<RouteGeometry | null>(null);
 
   // Géolocalisation réelle avec repli silencieux sur le centre par défaut
   // en cas de refus / erreur / navigateur incompatible.
@@ -110,6 +267,12 @@ export function HomePage() {
   useEffect(() => {
     requestLocation();
   }, [requestLocation]);
+
+  // Un nouvel arrêt sélectionné (ou la fermeture du panneau) invalide le
+  // tracé précédent — pas de tracé fantôme vers l'ancien arrêt.
+  useEffect(() => {
+    setRouteGeometry(null);
+  }, [selectedStop?.id]);
 
   // Bannière de succès brève : auto-disparition ~2s après connexion OK.
   useEffect(() => {
@@ -168,6 +331,7 @@ export function HomePage() {
             userLocation={userLocation}
             isLocating={isLocating}
             onRecenter={requestLocation}
+            routeGeometry={routeGeometry}
           />
         )}
       </div>
@@ -189,6 +353,14 @@ export function HomePage() {
             <div className="home__detail-title">
               <h2>{selectedStop.name ?? 'Arrêt sans nom'}</h2>
               <DetailFavoriteButton stop={selectedStop} />
+              <RouteToStopButton
+                key={selectedStop.id}
+                stop={selectedStop}
+                userLocation={userLocation}
+                isLocating={isLocating}
+                onRequestLocation={requestLocation}
+                onGeometryChange={setRouteGeometry}
+              />
             </div>
             <p>{selectedStop.stopType}</p>
             {selectedStop.lines.length > 0 && (

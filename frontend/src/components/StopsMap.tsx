@@ -9,9 +9,18 @@
 // la configuration) — jamais un écran cassé faute de clé.
 // =============================================================================
 import { useEffect, useRef, useState } from 'react';
-import { Map, Marker, NavigationControl, Popup, type StyleSpecification } from 'maplibre-gl';
+import {
+  LngLatBounds,
+  Map,
+  Marker,
+  NavigationControl,
+  Popup,
+  type GeoJSONSource,
+  type StyleSpecification,
+} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Stop } from '@/lib/api/types';
+import type { RouteGeometry } from '@/hooks/useRoute';
 import { LoaderIcon, LocateFixedIcon } from '@/components/icons';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY;
@@ -76,6 +85,52 @@ interface StopsMapProps {
   userLocation?: { lat: number; lon: number } | null;
   isLocating?: boolean;
   onRecenter?: () => void;
+  // Tracé d'itinéraire (GeoJSON LineString, coords [lon, lat]) — null = aucun.
+  routeGeometry?: RouteGeometry | null;
+}
+
+// Source/couche du tracé d'itinéraire (ids réservés à cet usage).
+const ROUTE_SOURCE_ID = 'route';
+const ROUTE_LAYER_ID = 'route-line';
+
+// Crée ou met à jour le tracé ; le supprime nettement si geometry est null
+// (pas de tracé fantôme). La couche est insérée SOUS la première couche de
+// symboles du style quand il y en a une : le tracé ne masque ni les noms de
+// rues ni les popups (les marqueurs, eux, sont des éléments DOM positionnés
+// par-dessus le canvas de toute façon).
+function upsertRouteLayer(map: Map, geometry: RouteGeometry | null): void {
+  const existing = map.getSource(ROUTE_SOURCE_ID);
+  if (!geometry) {
+    if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
+    if (existing) map.removeSource(ROUTE_SOURCE_ID);
+    return;
+  }
+  const data = {
+    type: 'Feature' as const,
+    properties: {},
+    geometry: { type: 'LineString' as const, coordinates: geometry.coordinates },
+  };
+  // Mise à jour en place quand la source existe déjà (cas courant).
+  if (existing && existing.type === 'geojson') {
+    (existing as GeoJSONSource).setData(data);
+    return;
+  }
+  // Recréation (premier tracé, ou après un changement de style MapTiler qui
+  // purge les sources/couches personnalisées via setStyle()).
+  if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
+  if (existing) map.removeSource(ROUTE_SOURCE_ID);
+  map.addSource(ROUTE_SOURCE_ID, { type: 'geojson', data });
+  const firstSymbolLayer = map.getStyle().layers?.find((l) => l.type === 'symbol');
+  map.addLayer(
+    {
+      id: ROUTE_LAYER_ID,
+      type: 'line',
+      source: ROUTE_SOURCE_ID,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#0A9396', 'line-width': 4 },
+    },
+    firstSymbolLayer?.id,
+  );
 }
 
 export function StopsMap({
@@ -85,11 +140,15 @@ export function StopsMap({
   userLocation,
   isLocating,
   onRecenter,
+  routeGeometry,
 }: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const markersRef = useRef<Marker[]>([]);
   const userMarkerRef = useRef<Marker | null>(null);
+  // Dernière géométrie connue : permet de redessiner le tracé après un
+  // changement de style (setStyle purge les sources/couches perso).
+  const routeGeometryRef = useRef<RouteGeometry | null>(null);
   const [styleId, setStyleId] = useState<MapStyleId>(DEFAULT_STYLE);
   const [mapReady, setMapReady] = useState(false);
 
@@ -109,6 +168,9 @@ export function StopsMap({
     return () => {
       userMarkerRef.current?.remove();
       userMarkerRef.current = null;
+      routeGeometryRef.current = null;
+      if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
+      if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
       map.remove();
       mapRef.current = null;
     };
@@ -121,10 +183,17 @@ export function StopsMap({
 
   // Bascule de style : les Markers sont des éléments DOM indépendants des
   // couches du style, ils survivent à setStyle() sans avoir à être recréés.
+  // Le tracé d'itinéraire (source/couche perso), lui, est purgé par setStyle()
+  // — on le redessine dès que le nouveau style est prêt.
   function handleStyleChange(id: MapStyleId) {
     if (!mapRef.current || id === styleId) return;
     setStyleId(id);
-    mapRef.current.setStyle(resolveMapStyle(id));
+    const map = mapRef.current;
+    map.setStyle(resolveMapStyle(id));
+    map.once('style.load', () => {
+      const geometry = routeGeometryRef.current;
+      if (geometry) upsertRouteLayer(map, geometry);
+    });
   }
 
   useEffect(() => {
@@ -175,6 +244,24 @@ export function StopsMap({
       userMarkerRef.current = null;
     };
   }, [userLocation, mapReady]);
+
+  // Tracé d'itinéraire : mise à jour en place quand la source existe déjà,
+  // suppression nette quand routeGeometry repasse à null. Un nouveau tracé
+  // cadre automatiquement la carte sur l'ensemble du parcours.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const geometry = routeGeometry ?? null;
+    routeGeometryRef.current = geometry;
+    upsertRouteLayer(map, geometry);
+    if (geometry && geometry.coordinates.length > 1) {
+      const bounds = geometry.coordinates.reduce(
+        (b, [lon, lat]) => b.extend([lon, lat]),
+        new LngLatBounds(),
+      );
+      map.fitBounds(bounds, { padding: 60 });
+    }
+  }, [routeGeometry, mapReady]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
