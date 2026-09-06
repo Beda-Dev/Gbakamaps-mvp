@@ -2,7 +2,7 @@
 
 > **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
 
-Dernière mise à jour : **2026-09-06 20:45**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+Dernière mise à jour : **2026-09-06 21:45**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
 
 **Règle adoptée pendant cette session (2026-09-06 17:05), à appliquer systématiquement** : avant d'adopter tout nouvel outil/service externe dans ce projet (librairie, API tierce, etc.), faire une recherche réelle (web + test empirique si possible) sur sa fiabilité/ses limites plutôt que de se fier à sa réputation ou sa documentation seule — c'est exactement ce qui a révélé qu'OSRM ne distinguait pas ses profils malgré ce qu'affirme sa propre doc (voir §4).
 
@@ -343,6 +343,10 @@ Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour réf
 | 2026-09-06 20:00 | `d7ee3cc` | Recherche textuelle des arrêts (`/api/stops/search`, `useStopSearch`, `StopSearchBar`), écrit directement | Backend 61/61, frontend 53/53, vérifié en navigateur réel (recherche→dropdown→sélection→recentrage), premier livrable de la phase 2 "au-delà du MVP" (§12) |
 | 2026-09-06 20:15 | `9591a23` | Chaîne de secours routing (ORS clé 1→clé 2→GraphHopper), écrit directement | 64/64 tests backend, bug réel trouvé et corrigé en cours de route (Docker transmet une chaîne vide pour une variable `environment:` non définie, `env.ts` la traitait comme invalide plutôt qu'absente) |
 | 2026-09-06 20:30 | `97f6b3e` | Chaîne de secours carte (MapTiler clé 1→clé 2→OSM), écrit directement | Vérifié en navigateur réel avec deux serveurs de dev temporaires et des clés invalides forcées — bascule confirmée par les requêtes réseau réelles à chaque palier (clé 2, puis OSM) |
+| 2026-09-06 21:32 | `4b4a504` | Correctif GraphHopper (`vehicle`→`profile`), écrit directement | Trouvé en vérifiant contre la vraie spec OpenAPI officielle (fournie par l'utilisateur) ; re-testé avec la vraie clé, fonctionne réellement |
+| 2026-09-06 21:33 | `95a5145` | Planificateur de trajet multi-modal (`GET /api/trip-plan`), GTFS séquence/temps réel, module `lines` (tarif admin), écrit directement | 85/85 tests backend ; deux bugs réels trouvés et corrigés en cours de route (contrainte unique StopLine, mélange de dessertes d'un arrêt hub) ; vitesses de trajet réelles vérifiées physiquement plausibles (13-23 km/h) après correction |
+| 2026-09-06 21:35 | `7df22b8` | Filtres mode de transport et ligne sur `/api/stops/nearby`, écrit directement | 6 nouveaux tests, filtres combinables (ET entre type et modes) |
+| 2026-09-06 21:40 | `e9d49f3` | Écran "Planifier un trajet" (frontend), écrit directement | 59/59 tests frontend, vérifié en navigateur réel (recherche→sélection→comparaison→5 plans avec icônes de mode, desktop+mobile), suite e2e critique toujours verte |
 
 ---
 
@@ -436,21 +440,25 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 - ~~Recherche textuelle des arrêts~~ ✅ fait (commit `d7ee3cc`) — voir §12.4
 - ~~Chaîne de secours routing (ORS clé 1→clé 2→GraphHopper)~~ ✅ fait (commit `9591a23`) — voir §12.5
 - ~~Chaîne de secours carte (MapTiler clé 1→clé 2→OSM)~~ ✅ fait (commit `97f6b3e`) — voir §12.5
-- Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir
-- Affichage des tarifs (`TransportLine.fare`) — actuellement toujours `null` (le GTFS JungleBus ne les fournit pas) ; des données réelles existent publiquement (ex. budgetabidjan.com, trouvé pendant la recherche §5bis) — à évaluer comme source d'enrichissement manuel ou via signalements communautaires
+- ~~Recherche et filtres (mode de transport, ligne, rayon)~~ ✅ fait (commit `7df22b8`) — voir §12.7
+- ~~Planificateur de trajet multi-modal réel~~ ✅ fait (commits `95a5145`, `e9d49f3`) — voir §12.7. L'écart produit le plus important identifié en phase 2 est comblé : l'app utilise enfin ses lignes gbaka/woro-woro/bus pour calculer un itinéraire, pas seulement les afficher.
+- Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir (~1,36 Mo actuellement)
 - Accessibilité : audit systématique (contrastes, navigation clavier, lecteurs d'écran) — pas encore fait au-delà des `aria-label`/`role` ajoutés au fil de l'eau
-- Estimation de coût de trajet (tarifs indicatifs par mode, données réelles 2026 déjà collectées §12.2) — affichage à côté du résultat d'itinéraire existant
-- Filtre interactif par type d'arrêt sur la carte (la légende existe déjà visuellement, la rendre cliquable)
-- Onboarding minimal pour un nouveau visiteur (favoris/itinéraire/signalement expliqués en un coup d'œil)
+- Onboarding minimal pour un nouveau visiteur (favoris/itinéraire/signalement/planification expliqués en un coup d'œil)
+- Étendre le planificateur : correspondances via une marche courte entre deux arrêts proches de lignes différentes (aujourd'hui limité au même arrêt physique, §12.7) ; utiliser l'API Matrix ORS (§12.6) pour accélérer le filtrage des candidats
 
-### 🔵 Différenciateur stratégique (gros chantier, plusieurs cycles — voir §12.3 P0)
-- Planificateur de trajet multi-modal réel s'appuyant sur le graphe GTFS (marche→arrêt→ligne→[correspondance]→arrêt→marche) — l'écart produit le plus important identifié en phase 2 : l'app affiche les lignes gbaka/woro-woro mais ne les utilise jamais pour calculer un itinéraire. Nécessite une conception dédiée avant implémentation. L'API Matrix d'ORS (§12.6) accélérerait ce chantier.
+### 🔵 Gros chantiers identifiés, pas encore conçus (voir §12.8)
+- **Gestion CRUD admin complète** (demandée explicitement, confirmée deux fois par l'utilisateur) — au-delà du tarif des lignes (déjà en place côté backend), gérer plus largement les arrêts/lignes/données depuis un vrai écran d'administration. À concevoir (entités, actions, garde-fous) avant d'implémenter.
+- Boussole/orientation de l'appareil (`DeviceOrientationEvent`) pour enrichir "Suivre mon trajet"
+- Photos des arrêts (Mapillary ou tags OSM `image=`/`wikimedia_commons=` via Overpass) — pistes réelles, jamais testées empiriquement
+- Fonctionnalités IA (Gemini, si l'utilisateur fournit une clé) — pistes non spécifiées (description en langage naturel d'un itinéraire, aide à la modération)
+- Recherche de lieux nommés quelconques via Overpass (pas seulement arrêts/lignes connus) pour la destination libre du planificateur
 
 ### 🟢 Priorité faible
 - WebSocket/realtime pour la modération (design esquissé en §4, non implémenté)
 - CI/CD (délibérément non prioritaire tant que le MVP n'est pas stabilisé) — la suite e2e (§9 ci-dessus) est prête à y être branchée le jour venu (même prérequis `docker compose up -d` + `npm run dev`)
 - Réexaminer le choix ORS si un jour une instance auto-hébergée devient pertinente au volume du projet
-- Isochrones et geocoding ORS (§12.6) — pistes identifiées, pas encore de design produit
+- Isochrones ORS (§12.6) — piste identifiée, pas encore de design produit
 
 ### Explicitement écarté (limite honnête, pas un oubli — voir §5bis)
 - Position live des véhicules gbaka/woro-woro (aucune source de données, aucune ne semble exister)
@@ -467,9 +475,16 @@ Ordre exécuté : (1) écran itinéraire ✅, (2) écran signalements ✅, (3) �
 
 Le test e2e critique (2026-09-06 19:15, commit `90e5f15`) clôt la dernière lacune de couverture répétée dans ce fichier.
 
-**Phase 2 engagée (§12)** : recherche produit réelle effectuée (analyse à froid du produit + recherche marché/UX/contexte ivoirien avec sources), roadmap priorisée P0/P1/P2 écrite. Premier cycle livré le 2026-09-06 20:00-20:45 : recherche textuelle des arrêts (P1.1, commit `d7ee3cc`), puis — suite à une demande explicite de l'utilisateur après un incident réel de rate-limit ORS pendant les tests — chaînes de secours multi-fournisseurs pour le routing (commit `9591a23`) et la carte (commit `97f6b3e`), toutes deux vérifiées en conditions réelles (voir §12.5).
+**Phase 2 (§12)** : recherche produit réelle effectuée (analyse à froid du produit + recherche marché/UX/contexte ivoirien avec sources), roadmap priorisée P0/P1/P2 écrite, puis livrée intégralement dans ce même cycle (2026-09-06 20:00-21:45) suite à une demande utilisateur très détaillée reprenant et dépassant l'ambition de l'ancien projet GbakaMaps :
+1. Recherche textuelle des arrêts (P1.1, commit `d7ee3cc`).
+2. Chaînes de secours multi-fournisseurs — routing (`9591a23`) et carte (`97f6b3e`) — suite à un incident réel de rate-limit ORS pendant les tests, toutes deux vérifiées en conditions réelles (§12.5).
+3. Correctif GraphHopper (`4b4a504`) trouvé en vérifiant contre la vraie spec API fournie par l'utilisateur.
+4. **Le planificateur multi-modal réel (P0, l'écart stratégique le plus important du projet)** livré en entier : topologie GTFS ordonnée par sens (prérequis corrigé), deux bugs réels trouvés et corrigés pendant le développement (contrainte unique StopLine, mélange de dessertes d'un hub), modèle de tarif revu en cours de route sur demande explicite de l'utilisateur (admin fait foi, jamais une valeur inventée dans le code), backend (`95a5145`) et frontend (`e9d49f3`) tous deux livrés et vérifiés en navigateur réel.
+5. Filtres de recherche (mode de transport, ligne) sur `/stops/nearby` (`7df22b8`).
 
-**Prochaine étape à engager** : items 🟠/🔵/🟢 restants de §9. Recommandation de priorisation : (a) accessibilité et code-splitting (gains rapides, effort contenu) avant (b) le planificateur multi-modal (🔵, différenciateur stratégique mais gros chantier nécessitant une conception dédiée en amont — ne pas se lancer directement dans l'implémentation). Aucune de ces tâches n'est bloquante ni risquée — à enchaîner en mode autonome selon le même protocole (délégation ciblée si pertinent, vérification indépendante systématique — y compris re-vérifier qu'un agent délégué a bien produit des fichiers avant de lire son rapport, voir §5 — navigateur réel avant de déclarer terminé).
+**Le périmètre MVP ET tous les items P0/P1 de la phase 2 sont désormais terminés.** Idées réelles non encore construites, à ne pas oublier : voir §12.8 (CRUD admin complet — demandé explicitement —, boussole, photos d'arrêts, IA Gemini, recherche de lieux via Overpass).
+
+**Prochaine étape à engager** : items 🟠/🔵/🟢 restants de §9, dans l'ordre suggéré : (a) accessibilité et code-splitting (gains rapides) ; (b) concevoir puis construire la gestion CRUD admin complète (🔵, demande explicite de l'utilisateur, nécessite une conception des entités/actions/garde-fous avant implémentation) ; (c) étendre le planificateur aux correspondances par marche courte. Aucune de ces tâches n'est bloquante ni risquée — à enchaîner en mode autonome selon le même protocole (vérification indépendante systématique, navigateur réel avant de déclarer terminé).
 
 ---
 
@@ -559,3 +574,35 @@ Sources : [documentation officielle openrouteservice.org/services](https://openr
 - **Elevation** : peu pertinent pour Abidjan (relief globalement plat en zone urbaine) — écarté.
 
 **Statut** : recherche faite, aucune implémentation pour l'instant — ces pistes rejoignent la roadmap §12.3 (P0/P2) plutôt que d'être ajoutées de façon ad hoc.
+
+### 12.7 Planificateur multi-modal réel livré (2026-09-06 20:45-21:45) — l'écart stratégique P0 est comblé
+
+Suite à une demande explicite et détaillée de l'utilisateur ("reprends l'ambition initiale de GbakaMaps mais en mieux") reprenant et dépassant l'objectif P0 identifié en §12.3, le planificateur multi-modal a été conçu et livré dans ce cycle, avec plusieurs découvertes et corrections en cours de route.
+
+**Prérequis data corrigé** : `StopLine.sequence`/`direction` existaient dans le schéma depuis le début du projet mais étaient à **0% remplis** — l'import ne captait que l'ensemble des arrêts d'une ligne, jamais leur ordre. Or les fichiers GTFS sources (`stop_times.txt`, `trips.txt`) contiennent bien `stop_sequence`/`direction_id`/`trip_headsign` — `import-gtfs.ts` réécrit pour les exploiter via un "voyage représentatif" par (ligne, sens). Résultat : 98,3% des dessertes (10183/10357) ont désormais un ordre réel et un temps relatif entre arrêts (`secondsFromRouteStart`, écart GTFS 2021 — jamais l'horaire absolu).
+
+**Deux bugs de modèle/algorithme trouvés PENDANT le développement (pas en théorie)** :
+1. La contrainte unique `[stopId, lineId]` ne permettait qu'UNE seule ligne stockée par arrêt — or un arrêt terminus/hub peut appartenir aux DEUX sens d'une même ligne avec des arrêts **entièrement différents** entre les deux sens (vérifié empiriquement : 0 arrêt commun sur 31+31 testés, pas une supposition). Le second sens importé écrasait silencieusement le premier. Corrigé en ajoutant `direction` à la contrainte d'unicité (140 arrêts partagés entre les deux sens sur l'ensemble du réseau, tous préservés après correction).
+2. Un arrêt hub desservi par plusieurs lignes (ex. "Cash Center Plateau", 29 lignes réelles) voyait ses dessertes atteignables mélangées entre lignes sans rapport lors de la recherche de correspondances — un premier test réel a produit un plan affichant une "ligne 25" reliant deux arrêts n'appartenant pourtant pas à la même ligne, avec une vitesse résultante de **522 km/h**. Corrigé en indexant les résultats par (arrêt, ligne, sens) plutôt que par arrêt seul. Après correction, toutes les vitesses observées sur des trajets réels sont redevenues physiquement plausibles (13-23 km/h, cohérent avec un bus/gbaka en circulation urbaine dense).
+
+**Décision produit sur le coût, changée en cours de session par l'utilisateur** : le plan initial prévoyait un tableau de tarifs indicatifs codés en dur par mode de transport. L'utilisateur a explicitement demandé que ce soit plutôt **l'administrateur** qui définisse les tarifs réels. Redesign : `TransportLine.fare` (déjà dans le schéma, toujours `null` jusqu'ici) fait foi ; nouveau champ `fareVerified` (booléen) distingue une valeur indicative pré-remplie à l'import (tarifs 2026 réels recherchés, §12.2 : bus 200F — l'utilisateur a précisé que le tarif bus réel est 200 OU 500 F selon la ligne, 200 retenu comme valeur de départ la plus courante ; gbaka 250F ; wôrô-wôrô 500F) d'une valeur confirmée par un administrateur. Nouveau module `lines` : `GET /api/lines(/:id)` public, `PATCH /api/admin/lines/:id` (admin uniquement) pour corriger le vrai tarif — l'import ne touche plus jamais une ligne une fois `fareVerified=true`. TAXI/MOTO_TAXI n'apparaissent jamais comme type de LIGNE dans les données GTFS (ce sont des stations, pas des trajets fixes), donc hors de portée de ce mécanisme.
+
+**GraphHopper — bug trouvé en vérifiant contre la vraie doc** : l'utilisateur a fourni le fichier `openapi.json` officiel de GraphHopper (référence tierce, jamais commitée — voir `.gitignore`). Vérification faite (comme la règle l'exige pour tout service externe) : le paramètre de requête réel est `profile` (valeurs `car`/`bike`/`foot`), pas `vehicle` (nom d'une version antérieure de leur API) utilisé par erreur lors de l'implémentation initiale du repli routing (§12.5). Corrigé et re-testé avec la vraie clé de l'utilisateur contre `graphhopper.com/api/1/route` — fonctionne réellement.
+
+**Portée assumée de cette V1** (documentée dans le code, pas cachée) : trajets directs et à 1 correspondance maximum, correspondance limitée à un changement au même arrêt physique (pas de marche entre deux arrêts proches de lignes différentes — amélioration possible via l'API Matrix ORS, §12.6), temps de marche estimé par une vitesse standard (5 km/h + facteur de détour 1,3, valeurs usuelles de planification piétonne, pas mesurées à Abidjan) plutôt que des appels OpenRouteService par candidat (évite de multiplier les appels externes après l'incident de rate-limit ORS, §12.5).
+
+**Filtres de recherche ajoutés** (demande explicite, §12.3 "Recherche et filtres") : `GET /api/stops/nearby` accepte désormais `modes=gbaka,woroworo,taxi,mototaxi` (liste, sémantique OU, sur les booléens réels de `Stop` — indépendants de `stopType` qui ne retient qu'un mode dominant à l'affichage) et `lineId=<uuid>` (ne retient que les arrêts desservis par une ligne précise). Combinable avec `type` (ET logique).
+
+**Frontend** : nouvelle page `/planifier` — origine (recherche ou géolocalisation réelle) → destination (recherche) → filtres (rayon de marche 500m/1km/2km/5km, critère d'optimisation le plus rapide/moins cher/moins de marche) → liste de plans classés, premier marqué "Recommandé", détail des étapes avec icônes réelles par mode (bus pour BUS/GBAKA, taxi partagé pour WORO_WORO — nouvelles icônes `BusIcon`/`CarTaxiFrontIcon`, Lucide, licence documentée) et étiquettes explicites "(estimé)" partout où une donnée n'est pas vérifiée. Lien "Planifier un trajet" visible que l'utilisateur soit connecté ou non (fonctionnalité publique).
+
+**Vérifié réellement** : 85 tests backend (dont 13 nouveaux tests trip-planning avec une topologie de lignes semée explicitement et des coordonnées isolées géographiquement pour ne pas polluer les assertions avec les vraies données GTFS déjà en base — piège de test rencontré et corrigé pendant l'écriture des tests, voir §5 style), 7 nouveaux tests lines, 59 tests frontend (dont 6 nouveaux useTripPlan), suite e2e critique toujours verte après tout ce chantier, ET un parcours complet en navigateur réel (recherche origine/destination, sélection, comparaison, 5 plans réels affichés avec icônes de mode, changement de critère fonctionnel, desktop + mobile).
+
+### 12.8 Pistes réelles identifiées pendant les échanges, pas encore implémentées (à ne pas oublier)
+
+Notées explicitement à la demande de l'utilisateur ("tu fais vraiment les notes ?") — ce sont des idées réelles évoquées en conversation, jamais encore construites :
+
+- **Gestion CRUD admin complète** (demande explicite, confirmée deux fois par l'utilisateur) : au-delà de la modération des signalements et du tarif des lignes (déjà backend uniquement, §12.7), l'utilisateur veut pouvoir gérer plus largement les données depuis le front en tant qu'admin (ajouter/modifier/supprimer arrêts, lignes, etc.). Rien construit à ce stade au-delà de `PATCH /api/admin/lines/:id` (backend seul, pas d'écran) — un vrai chantier à part, à concevoir (quelles entités, quelles actions, quels garde-fous) avant d'implémenter.
+- **Boussole / orientation de l'appareil** (`DeviceOrientationEvent`) pour "Suivre mon trajet" — ferait pivoter la carte selon le cap réel du téléphone, ou afficherait une flèche vers le prochain arrêt. Techniquement faisable, contraintes réelles connues (HTTPS requis, permission explicite requise sur iOS 13+ via clic utilisateur). Pas implémenté.
+- **Photos des arrêts** — deux pistes réelles identifiées (pas testées) : Mapillary (photos de rue crowdsourcées, API gratuite, couverture réelle à Abidjan incertaine pour de petits arrêts informels) et les tags OSM `image=`/`wikimedia_commons=` sur les nœuds sources (récupérables via Overpass, rares sur de simples arrêts de bus). À tester empiriquement avant toute implémentation — pas de promesse faite.
+- **Fonctionnalités IA (Gemini)** — l'utilisateur a proposé d'ajouter une clé API Gemini si une fonctionnalité IA s'avérait utile. Pistes envisageables mais non spécifiées plus avant : description en langage naturel d'un itinéraire ("Prenez la ligne 15 à Gare Sud puis..."), aide à la modération des signalements. Aucune décision prise, aucune clé demandée pour l'instant.
+- **Overpass API** (rappelé explicitement par l'utilisateur) — écarté depuis le début du projet pour les tags de transport informel (taux de résultat quasi nul, cf. §4/§7), mais une piste différente et plausible existe : recherche de lieux nommés quelconques (pas seulement arrêts/lignes connus) pour compléter la recherche de destination libre dans le planificateur — rejoint la piste "Geocoding" de §12.6, jamais implémentée, jamais testée empiriquement pour cet usage précis.
