@@ -2,12 +2,14 @@
 
 Reconstruction du projet GbakaMap (localisation des transports informels — bus, gbaka, woro-woro — en Côte d'Ivoire), sur une base plus simple, plus sûre et entièrement auto-hébergée. Ce dépôt remplace l'ancien backend Next.js/Firebase/Neon — voir [§ Pourquoi cette reconstruction](#pourquoi-cette-reconstruction).
 
+> 📋 **[PROJECT_MEMORY.md](PROJECT_MEMORY.md)** tient à jour l'état détaillé du projet, les décisions techniques justifiées, les bugs déjà rencontrés (et comment ne pas les reproduire) et les prochaines étapes. À lire avant toute reprise de travail sur ce projet.
+
 ## État actuel
 
 | Composant | État |
 |---|---|
-| Backend (Fastify + Prisma + PostgreSQL/PostGIS) | ✅ Fonctionnel — 5 modules, 50 tests réels |
-| Frontend (PWA) | 🚧 Pas encore commencé |
+| Backend (Fastify + Prisma + PostgreSQL/PostGIS) | ✅ Fonctionnel — 6 modules, 50 tests réels |
+| Frontend (PWA) | 🚧 Carte + auth fonctionnelles ; favoris/signalements/admin/itinéraire pas encore d'écran |
 | Déploiement / CI | 🚧 Pas encore mis en place (volontairement, cf. principe MVP) |
 
 ## Stack

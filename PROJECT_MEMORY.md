@@ -1,0 +1,369 @@
+# PROJECT MEMORY — GbakaMap MVP
+
+> **Règle d'usage** : toute nouvelle session (humaine ou IA) travaillant sur ce projet doit lire ce fichier en premier. Toute session qui termine un travail significatif doit le mettre à jour avant de s'arrêter. Ne jamais y inscrire une hypothèse comme si c'était une décision validée — si ce n'est pas vérifié, l'écrire explicitement comme "à vérifier" ou "supposé, non confirmé".
+
+Dernière mise à jour : **2026-09-06 17:05**, par la session Claude Opus 5 qui a construit ce projet depuis son démarrage.
+
+---
+
+## 1. Informations générales
+
+**Nom du projet** : GbakaMap MVP — application de localisation des transports informels (bus, gbaka, woro-woro) en Côte d'Ivoire.
+
+**Ce projet est une reconstruction volontaire.** Il existe deux autres dépôts sur cette machine qui ne font PAS partie de ce projet mais en sont l'origine :
+- `C:\Users\HP\Desktop\Projet\GbakaMaps` — ancien backend (Next.js + Firebase + Neon), audité en détail (voir §7 "Audit de l'ancien projet" plus bas). **Ne pas y toucher, ne pas en réutiliser le code**, seulement les enseignements de l'audit et son flux GTFS/schéma Prisma comme référence.
+- `C:\Users\HP\Desktop\Projet\appli_mobile_gbakamap` — ancienne app mobile React Native (ne compilait pas). Repoussée en V2, hors périmètre actuel.
+
+**Localisation de ce projet** : `C:\Users\HP\Desktop\Projet\gbakamap-mvp`
+
+**Décision produit fondatrice** (validée par l'utilisateur) : reconstruire un MVP simple, sûr, auto-hébergé, en abandonnant Next.js/Firebase/Neon/Overpass-en-direct au profit de Fastify/PostgreSQL-Docker/sessions-maison/import-GTFS-batch. Détail des arbitrages en §4.
+
+---
+
+## 2. État actuel du projet
+
+### Fonctionnalités implémentées ✅
+
+**Backend** (Fastify, `backend/`) :
+- `auth` — signup, login (rate-limité), logout, `/me`, sessions opaques en base, argon2id
+- `stops` — recherche géospatiale PostGIS (`ST_DWithin` + index GiST), détail d'un arrêt
+- `favorites` — ajout/liste/suppression, scopé strictement par utilisateur (protection IDOR testée)
+- `reports` — création de signalement, liste "mes signalements", modération admin (liste + changement de statut), protection `requireAdmin` stricte
+- `routing` — proxy OSRM (calcul d'itinéraire, un seul profil "driving" exposé — voir §4)
+- Import batch GTFS réel (JungleBus, Grand Abidjan) : 3 820 arrêts nommés, 391 lignes bus/gbaka/woro-woro
+
+**Frontend** (Vite + React 19 + PWA, `frontend/`) :
+- Carte MapLibre + MapTiler (5 styles commutables : rues/basique/plein air/satellite/hybride), fallback OSM si clé absente
+- Géolocalisation réelle, bouton recentrer, marqueur de position
+- Panneau détail d'arrêt (bottom-sheet mobile / panneau latéral desktop responsive)
+- Pages login/signup fonctionnelles, routage react-router-dom (`/`, `/login`, `/signup`)
+- Bandeau d'état de connexion (`AuthStatus`) intégré à la page d'accueil
+- Icônes SVG inlinées depuis Lucide (licence documentée)
+
+**Tests** :
+- Backend : **50 tests** d'intégration réels (vitest + vraie base PostgreSQL/PostGIS dockerisée, zéro mock de la DB)
+- Frontend : **6 tests** de composants (vitest + jsdom + testing-library, fetch mocké — première suite de tests frontend du projet)
+
+### Fonctionnalités en cours / partiellement faites 🚧
+
+- Rien "en cours" au sens strict au moment de la rédaction — le dernier lot (auth screens) est terminé et commité.
+
+### Fonctionnalités restantes ❌ (périmètre MVP, pas encore commencées)
+
+- Écran favoris (liste, ajout/suppression depuis l'UI — le backend existe, pas l'écran)
+- Écran signalements (création + liste "mes signalements" côté UI — le backend existe, pas l'écran)
+- Écran de modération admin (le backend existe, pas l'écran)
+- Écran/UI de calcul d'itinéraire (le backend `routing` existe, pas d'écran qui l'utilise)
+- Tests d'intégration end-to-end frontend↔backend (actuellement le frontend mocke fetch dans ses tests ; aucun test ne vérifie le vrai câblage front+back ensemble, hormis les vérifications manuelles en navigateur faites pendant le développement)
+
+### Explicitement HORS MVP (décision produit, pas oubli)
+
+Météo, mode hors-ligne, historique de recherche, comparaison d'itinéraires multi-modes, notifications push, notation des arrêts, app mobile native, CI/CD, WebSocket/realtime (voir §4 pour la réflexion WebSocket).
+
+### État global
+
+**Backend : solide et testé.** Tous les modules du périmètre MVP existent, sont testés (50/50), et ont été vérifiés en conteneur Docker. **Frontend : partiellement construit.** La carte et l'auth fonctionnent et sont vérifiées en navigateur réel ; les écrans favoris/signalements/admin/itinéraire restent à faire.
+
+---
+
+## 3. Stack et architecture
+
+### Backend
+- **Framework** : Fastify (Node.js, TypeScript, ESM)
+- **ORM** : Prisma 6.13
+- **Base de données** : PostgreSQL 16 + extension PostGIS, dans Docker (`postgis/postgis:16-3.4`), volume nommé `gbakamap_db_data`
+- **Auth** : sessions opaques stockées en base (table `Session`), cookie httpOnly, argon2id pour les mots de passe. **Pas de JWT côté client, pas de Firebase.**
+- **Validation** : Zod, sur tous les schémas d'entrée
+- **Tests** : Vitest, contre une vraie base (pas de mocks DB)
+- **Services externes** : OSRM (`router.project-osrm.org`, public, un seul profil réellement fonctionnel — voir §4), MapTiler (clé API frontend), Overpass (utilisé seulement de façon empirique pour l'audit de fiabilité des données, pas dans le pipeline d'import final)
+
+### Frontend
+- **Framework** : Vite + React 19 + TypeScript
+- **State serveur** : TanStack Query
+- **Routage** : react-router-dom (`createBrowserRouter`)
+- **Carte** : MapLibre GL JS + styles vectoriels MapTiler
+- **PWA** : vite-plugin-pwa (manifest + service worker)
+- **Tests** : Vitest + jsdom + @testing-library/react (fetch mocké)
+- **Icônes** : SVG copiés individuellement depuis Lucide (licence ISC/MIT), pas de dépendance `lucide-react` (bundle déjà lourd, ~1,3 Mo à cause de MapLibre)
+
+### Docker / infra
+- `docker-compose.yml` à la racine : 2 services (`db`, `backend`), le frontend tourne en dev via `npm run dev` (pas dockerisé, pas nécessaire)
+- **Deux `.env` distincts, ne pas confondre** :
+  - `.env` (racine) → alimente `docker-compose.yml`, `DATABASE_URL` utilise le hostname interne Docker `db`
+  - `backend/.env` → alimente le process Node lancé directement sur l'hôte (`npm run dev`, tests, scripts Prisma), `DATABASE_URL` utilise `localhost:5433` (port exposé, **pas 5432** — un PostgreSQL natif Windows préexistant occupe déjà 5432 sur cette machine)
+  - `frontend/.env` → `VITE_API_URL=/api` (relatif, voir §4 sur le proxy Vite) + `VITE_MAPTILER_KEY` (clé personnelle de l'utilisateur, jamais commitée)
+
+### Structure du dépôt
+
+```
+gbakamap-mvp/
+├── backend/
+│   ├── src/modules/{auth,stops,favorites,reports,routing,health}/
+│   │   └── *.schemas.ts / *.service.ts / *.routes.ts (convention stricte)
+│   ├── src/common/ (errors.ts, auth-middleware.ts, serialize.ts)
+│   ├── src/scripts/import-gtfs.ts
+│   ├── data/gtfs-abidjan/ (données GTFS réelles, committées, ~884 Ko)
+│   ├── prisma/schema.prisma + migrations/
+│   └── tests/*.test.ts (50 tests)
+├── frontend/
+│   ├── src/pages/ (HomePage, LoginPage, SignupPage)
+│   ├── src/components/ (StopsMap, AuthStatus, icons/)
+│   ├── src/hooks/ (useAuth, useHealth, useNearbyStops)
+│   ├── src/lib/api/ (client.ts, types.ts)
+│   └── src/test/ (setup.ts, utils.tsx)
+├── docker-compose.yml
+├── README.md (documentation utilisateur/développeur — à consulter aussi)
+└── PROJECT_MEMORY.md (ce fichier)
+```
+
+### Endpoints backend (14 au total)
+
+Voir le tableau complet dans `README.md` §Endpoints — reproduit ici pour référence rapide :
+
+| Méthode | Route | Auth |
+|---|---|---|
+| GET | `/api/health` | — |
+| POST | `/api/auth/signup` | — |
+| POST | `/api/auth/login` | — (rate-limité) |
+| POST | `/api/auth/logout` | session |
+| GET | `/api/auth/me` | session |
+| GET | `/api/stops/nearby` | — |
+| GET | `/api/stops/:id` | — |
+| POST/GET/DELETE | `/api/favorites` | session |
+| POST | `/api/reports` | session |
+| GET | `/api/reports/mine` | session |
+| GET/PATCH | `/api/admin/reports` | session + rôle ADMIN |
+| GET | `/api/route` | — |
+
+---
+
+## 4. Décisions techniques
+
+### 2026-09-05 — Abandon de Next.js/Firebase/Neon/Overpass-direct
+
+**Décision** : reconstruire sur Fastify + PostgreSQL/PostGIS Docker + sessions maison + import GTFS batch.
+**Pourquoi** : l'audit de l'ancien projet (voir §7) a trouvé des failles critiques (endpoints admin sans auth), une app mobile qui ne compilait pas, et des données à 99% inexploitables.
+**Conséquence** : ce nouveau dépôt (`gbakamap-mvp`), architecture from scratch.
+
+### 2026-09-06 00:40 — Fastify plutôt que NestJS
+
+**Décision** : Fastify.
+**Pourquoi** : structure suffisante pour un MVP sans le poids d'un framework à decorators/DI ; NestJS se justifierait si l'équipe grandissait vite, pas le cas.
+
+### 2026-09-06 00:40 — Sessions opaques plutôt que JWT
+
+**Décision** : sessions stockées en base, cookie httpOnly, pas de JWT côté client.
+**Pourquoi** : révocation immédiate nécessaire pour la modération (bannir un utilisateur doit couper l'accès tout de suite) ; mono-backend donc pas besoin du côté stateless du JWT.
+**Conséquence acceptée** : un lookup DB par requête authentifiée — acceptable au volume du MVP.
+
+### 2026-09-06 01:05 — GTFS JungleBus plutôt qu'Overpass en direct
+
+**Décision** : import batch depuis le flux GTFS JungleBus (Grand Abidjan) plutôt que des requêtes Overpass en temps réel.
+**Pourquoi** : vérifié empiriquement que les tags OSM spécifiques au transport informel ivoirien (`gbaka=yes`, `woro_woro=yes`, etc.) retournent quasiment 0 résultat sur le terrain. Le flux GTFS JungleBus fournit une topologie réelle déjà structurée par opérateur (24 opérateurs, dont 9 réseaux gbaka et 11 réseaux woro-woro par commune).
+**Résultat mesuré** : 3 820 arrêts tous nommés (0% sans nom, contre 99,3% dans l'ancien projet), 99,7% rattachés à au moins une ligne (contre 0,06%).
+**Limite documentée** : les horaires de ce flux datent de fin 2021 (obsolètes) — seule la topologie (arrêts/lignes/dessertes) est utilisée, jamais les horaires. Transport lagunaire (ferry) explicitement exclu du périmètre MVP.
+
+### 2026-09-06 01:05 — PostGIS plutôt que bounding-box + Haversine JS
+
+**Décision** : colonne géographique PostGIS (`geog`) synchronisée par trigger SQL depuis lat/lon, requêtes `ST_DWithin` sur index GiST.
+**Pourquoi** : corrige la limite de l'ancien projet (scan + calcul Haversine en JavaScript, non indexé).
+**Contrainte technique** : Prisma ne modélise pas nativement les types géographiques — utilisation de `Unsupported(...)` dans le schéma + requêtes `$queryRaw` paramétrées (`Prisma.sql`, donc protégées contre l'injection) pour les calculs spatiaux.
+
+### 2026-09-06 01:27 — Un seul profil OSRM exposé ("driving")
+
+**Décision** : ne pas exposer de choix de mode de trajet (marche/vélo/voiture) côté API/UI.
+**Pourquoi** : vérifié empiriquement contre `router.project-osrm.org` que les profils `walking`/`cycling`/`driving` renvoient EXACTEMENT la même distance/durée sur un même trajet — preuve que ce serveur démo public ne route en réalité que sur le graphe voiture. Exposer un choix de mode aurait affiché un temps de marche = temps en voiture, ce qui est trompeur.
+**Solution future (V2)** : pointer vers une instance OSRM auto-hébergée avec les profils réellement configurés.
+
+### 2026-09-06 (squelette frontend) — MapTiler plutôt que Google Maps ou OSM brut
+
+**Décision** : carte MapLibre + styles vectoriels MapTiler (clé API gratuite requise, `VITE_MAPTILER_KEY`).
+**Pourquoi** : l'ancien projet utilisait Google Maps avec une clé jamais configurée (`YOUR_GOOGLE_MAPS_API_KEY_*` en dur, jamais remplacée). MapTiler offre un rendu vectoriel net et détaillé avec un compte gratuit sans carte bancaire.
+**Repli** : si la clé est absente, bascule automatique sur des tuiles OSM brutes — l'app reste utilisable pendant la configuration, jamais un écran cassé.
+**Décision complémentaire** (suite à question utilisateur) : 5 styles commutables en direct (rues/basique/plein air/satellite/hybride) — tous vérifiés répondants en HTTP 200 avec la clé réelle de l'utilisateur.
+
+### 2026-09-06 — CORS multi-origine (tunnel de test)
+
+**Décision** : `FRONTEND_ORIGIN` accepte une liste séparée par des virgules (ou `*`, jamais accepté en production) plutôt qu'une seule origine fixe.
+**Pourquoi** : l'utilisateur teste l'app via un tunnel VS Code (URL publique HTTPS) en plus de `localhost:5173`, pour tester depuis son téléphone.
+**Implémentation** : `isAllowedOrigin()` dans `backend/src/config/env.ts`, utilisée à la fois par le plugin CORS et par la garde CSRF sur les mutations (les deux vérifiaient auparavant une égalité stricte contre une seule valeur).
+
+### 2026-09-06 — Proxy Vite pour cookies same-origin
+
+**Décision** : `VITE_API_URL=/api` (relatif) + proxy Vite (`server.proxy['/api'] → http://localhost:4000`) plutôt qu'une URL absolue avec CORS cross-origin.
+**Pourquoi** : évite la jonglerie CORS/credentials, le cookie de session (SameSite=Lax) part sans complication puisque front et API sont vus comme same-origin par le navigateur.
+**⚠️ Implication pour le déploiement** : la même règle de proxy (`/api` → backend) devra être reproduite côté reverse proxy en production (nginx ou équivalent), sinon le front pointera vers lui-même et tout appel API échouera en 404 — **exactement le bug rencontré et corrigé le 2026-09-06** (voir §5).
+
+### 2026-09-06 — Icônes copiées individuellement plutôt que `lucide-react`
+
+**Décision** : copier le SVG des icônes nécessaires (7 à ce jour : recentrer, fermer, chargement, œil, œil-barré) dans `frontend/src/components/icons/index.tsx`, avec attribution de licence dans `LICENSES-ICONS.md`, plutôt qu'ajouter la dépendance `lucide-react`.
+**Pourquoi** : le bundle est déjà à ~1,3 Mo à cause de MapLibre — pas de librairie d'icônes complète pour une poignée d'usages.
+
+### 2026-09-06 — WebSocket/realtime : reporté en V2, décision réfléchie mais non implémentée
+
+**Contexte** : l'utilisateur a demandé une réflexion sur l'intégration de WebSockets pour du realtime.
+**Constat clé** : il n'existe **aucune source de données GPS** pour les gbaka/woro-woro (véhicules informels sans télémétrie) — faire du "realtime" sur des positions de véhicules inexistantes serait de la façade, pas une fonctionnalité.
+**Cas d'usage réellement valables identifiés** (V2, pas MVP) : notifier un modérateur en direct à l'arrivée d'un nouveau signalement ; notifier un utilisateur du traitement de son signalement.
+**Design esquissé (non implémenté)** : `@fastify/websocket`, auth par cookie de session réutilisé à l'upgrade, deux canaux (`admin:reports` broadcast, `user:<id>:reports` ciblé), pas de Redis pub/sub tant qu'il n'y a qu'une seule instance backend.
+**Statut** : **aucun code écrit**. Décision explicite de ne pas l'implémenter maintenant — les écrans manquants (favoris, signalements, modération) ont plus de valeur immédiate.
+
+---
+
+## 5. Problèmes et solutions
+
+### 2026-09-06 00:40 — Conflit de port PostgreSQL (5432 déjà occupé)
+
+**Symptôme** : `prisma migrate dev` échoue avec une erreur d'authentification trompeuse contre le PostgreSQL Docker.
+**Cause** : un PostgreSQL natif Windows tourne déjà sur le port 5432 de la machine, intercepte la connexion avant le conteneur Docker.
+**Solution** : `POSTGRES_PORT=5433` dans `.env` — le port INTERNE du réseau Docker reste 5432 (aucun changement applicatif), seul le port exposé sur l'hôte change.
+**Fichiers concernés** : `.env`, `.env.example`, `docker-compose.yml` (aucun changement nécessaire dans ce dernier, juste la variable).
+**À ne pas reproduire** : ne pas supposer que 5432 est libre sur une machine de développeur Windows sans vérifier (`netstat -ano | grep 5432`).
+
+### 2026-09-06 01:15 — Bug BigInt non sérialisable
+
+**Symptôme** : `500 - Do not know how to serialize a BigInt` sur `/api/stops/nearby` et `/api/stops/:id` dès que de vraies données GTFS (avec `osmId` en BigInt) ont été importées — invisible avec des données de test synthétiques sans `osmId`.
+**Cause** : Fastify (comme `JSON.stringify` natif) ne sait pas sérialiser un `BigInt`.
+**Solution** : fonction `serializeStopBigInt()` dans `backend/src/common/serialize.ts`, appliquée dans `stops.service.ts` et `favorites.service.ts` (factorisée après avoir été dupliquée une première fois).
+**Fichiers concernés** : `backend/src/common/serialize.ts`, `backend/src/modules/stops/stops.service.ts`, `backend/src/modules/favorites/favorites.service.ts`.
+**Leçon** : ce bug n'est apparu qu'après l'import de vraies données — les tests avec données synthétiques minimalistes peuvent masquer des bugs de sérialisation sur des types qui n'apparaissent qu'en production.
+
+### 2026-09-06 (session Docker) — `taskkill` a tué Docker Desktop par erreur
+
+**Symptôme** : Docker inaccessible (`docker info` → échec de connexion au pipe).
+**Cause** : un `taskkill //F //PID <pid>` sur le port 4000, censé cibler un process de test, a en réalité tué `com.docker.backend.exe` (Docker Desktop lui-même faisait du port-proxying).
+**Solution appliquée** : l'utilisateur a relancé Docker Desktop manuellement. Les conteneurs (`restart: unless-stopped`) et le volume de données ont repris sans perte.
+**À ne surtout pas reproduire** : ne plus jamais faire `taskkill` sur un PID trouvé par scan de port sans avoir vérifié via `tasklist //FI "PID eq <pid>"` que le process est bien celui qu'on croit (ex: vérifier que le nom contient bien `node.exe` avant de tuer). **Règle adoptée depuis** : utiliser `TaskStop` (arrêt par ID de tâche suivi par le harnais) pour arrêter les process qu'on a soi-même démarrés en arrière-plan, et systématiquement vérifier le nom du process avant tout `taskkill` par PID scanné.
+
+### 2026-09-06 16:36 — Conteneur backend connecté à l'ancienne base Neon (incident sérieux)
+
+**Symptôme** : `/api/health` intermittent (200 puis 500), logs backend montrant `Can't reach database server at ep-steep-king-adcqwujq-pooler.c-2.us-east-1.aws.neon.tech` — l'URL Neon de **l'ancien projet audité**, pas la base locale.
+**Cause** : Docker ne relit les variables d'environnement (`.env`) qu'à la (re)création d'un conteneur, jamais à un simple redémarrage. Le conteneur `backend` tournait depuis 14h avec une valeur de `DATABASE_URL` figée au moment de sa création — probablement issue d'une expérimentation ou d'un `.env` temporairement modifié puis revenu à sa valeur correcte sans jamais recréer le conteneur.
+**Impact réel** : aucune écriture n'a eu lieu (le seul appel routé vers cette base était le health check, en lecture seule `SELECT 1`). Le "200" intermittent s'explique probablement par l'auto-veille de Neon (réveil lent au premier essai).
+**Solution** : `docker compose up -d --force-recreate backend` (a aussi recréé `db`, sans perte — volume nommé persistant, vérifié après coup avec une requête réelle sur les données GTFS).
+**Fichiers concernés** : aucun (config déjà correcte dans `.env` — c'est l'état du conteneur en mémoire qui était périmé, pas un fichier).
+**Leçon / vigilance à maintenir** : **après toute modification de `.env` racine, toujours vérifier `docker compose exec backend printenv DATABASE_URL`** pour confirmer que le conteneur en cours d'exécution reflète bien le fichier actuel — ne jamais supposer qu'un `.env` correct implique un conteneur à jour.
+
+### 2026-09-06 (module stops) — Migration Prisma échoue sur la shadow database
+
+**Symptôme** : `prisma migrate dev` échoue avec `type "geography" does not exist` lors de l'ajout de la colonne PostGIS.
+**Cause** : la "shadow database" que Prisma crée pour valider les migrations est vierge (pas d'extension PostGIS), contrairement à la base réelle qui utilise l'image `postgis/postgis`.
+**Solution** : ajout de `CREATE EXTENSION IF NOT EXISTS postgis;` dans la toute première migration (`init`), pas seulement celle qui introduit la colonne géographique — la shadow DB rejoue tout l'historique depuis zéro.
+**Fichiers concernés** : `backend/prisma/migrations/20260906002837_init/migration.sql`.
+
+### 2026-09-06 (squelette frontend) — Page blanche : alias `@/*` absent de `vite.config.ts`
+
+**Symptôme** : page complètement blanche en dev, alors que `tsc --noEmit` et `vite build` passaient tous les deux sans erreur.
+**Cause** : l'alias `@/*` était déclaré dans `tsconfig.json` (paths) mais jamais configuré dans `vite.config.ts` — Vite ne lit PAS les `paths` de tsconfig. `tsc` passait car il les lit, lui ; le serveur de dev renvoyait 500 sur tout module important `@/...` au runtime.
+**Solution** : ajout de `resolve.alias['@']` dans `vite.config.ts` pointant vers `./src`.
+**Fichiers concernés** : `frontend/vite.config.ts`.
+**Leçon majeure, à ne jamais oublier** : `tsc` et `vite build` NE SUFFISENT PAS à garantir qu'une app fonctionne réellement — un test visuel en navigateur réel (Playwright) est nécessaire avant de déclarer un travail frontend "terminé". Cette leçon s'est confirmée une seconde fois (voir bug proxy ci-dessous).
+
+### 2026-09-06 (squelette frontend) — Carte vide, zéro marqueur : maplibre-gl pré-bundlé
+
+**Symptôme** : la carte s'affichait (tuiles, contrôles) mais aucun marqueur n'apparaissait ; `mapCanvasPresent: true` mais `markerCount: 0`.
+**Cause** : `maplibre-gl` charge son moteur de rendu dans un Web Worker ; le pré-bundling de dépendances de Vite casse ce chargement en dev (404 sur `maplibre-gl-worker.mjs`), l'événement `load` de la carte n'est jamais émis.
+**Solution** : `optimizeDeps.exclude: ['maplibre-gl']` dans `vite.config.ts`.
+**Fichiers concernés** : `frontend/vite.config.ts`.
+**Diagnostic utile pour la suite** : tester le rendu MapLibre en headless nécessite de forcer un rendu logiciel WebGL (`--enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader` sur Chromium/Edge), sinon `webgl2: false` et la carte ne rend jamais dans un test automatisé.
+
+### 2026-09-06 (auth screens) — Signup renvoie 404 : proxy Vite manquant
+
+**Symptôme** : `POST /api/auth/signup` → 404, avec le message "Une erreur est survenue (404)" affiché dans le formulaire.
+**Cause** : `VITE_API_URL` avait été changé en `/api` (relatif, intention : proxy dev pour cookies same-origin) mais **aucun proxy n'avait été configuré dans `vite.config.ts`** — la requête partait donc vers le serveur Vite lui-même (`localhost:5173/api/auth/signup`), qui ne connaît pas cette route.
+**Solution** : ajout de `server.proxy['/api'] → { target: 'http://localhost:4000', changeOrigin: true }` dans `vite.config.ts`.
+**Fichiers concernés** : `frontend/vite.config.ts`.
+**⚠️ Vigilance déploiement** : cette règle de proxy devra être reproduite côté reverse proxy en production — sinon même bug en prod.
+
+### 2026-09-06 (auth screens) — Logout renvoie 500, bouton reste bloqué
+
+**Symptôme** : après signup réussi, cliquer sur "Déconnexion" renvoie une erreur 500 (`Body cannot be empty when content-type is set to 'application/json'`), l'utilisateur reste affiché comme connecté indéfiniment.
+**Cause** : `frontend/src/lib/api/client.ts` fixait inconditionnellement `Content-Type: application/json`, même pour les requêtes sans corps (`api.post('/auth/logout')` sans argument `data`). Fastify refuse un corps vide envoyé avec ce header.
+**Solution** : le header `Content-Type: application/json` n'est désormais posé que si `init.body` est effectivement présent.
+**Fichiers concernés** : `frontend/src/lib/api/client.ts`.
+**Leçon** : ce bug n'était détectable ni par les tests unitaires (fetch mocké, qui ne reproduit pas le comportement strict de Fastify) ni par `tsc`/`build` — seul un test de bout en bout contre le vrai backend l'a révélé.
+
+---
+
+## 6. Historique des modifications (chronologique, par commit)
+
+| Date/heure | Commit | Travail effectué | Résultat |
+|---|---|---|---|
+| 2026-09-06 00:40 | `4691085` | Squelette backend Fastify + Docker + module `auth` complet | 10 tests, `docker compose up -d --build` validé de bout en bout |
+| 2026-09-06 01:05 | `732a725` | Module `stops` (PostGIS) + import GTFS réel Grand Abidjan | 21 tests, 3820 arrêts réels importés, bug BigInt trouvé et corrigé |
+| 2026-09-06 01:12 | `0cace68` | Module `favorites`, délégué à OpenCode (1ère délégation réussie) | 29 tests, IDOR vérifié |
+| 2026-09-06 01:22 | `c48d427` | Module `reports`, délégué à OpenCode | 42 tests, faille admin de l'ancien projet vérifiée absente (401 confirmé) |
+| 2026-09-06 01:27 | `952b40d` | Module `routing`, écrit directement (pas délégué) | 50 tests, décision "un seul profil OSRM" prise après vérification empirique |
+| 2026-09-06 01:29 | `8408393` | README du monorepo | Documentation setup/architecture/endpoints |
+| 2026-09-06 01:49 | `6321a96` | Squelette frontend PWA (Vite+React+MapLibre) | Build + PWA générés, MapTiler intégré sur demande utilisateur |
+| 2026-09-06 02:14 | `818eb8b` | Passe UX/UI, délégué à OpenCode | 2 bugs bloquants trouvés et corrigés (alias `@`, maplibre worker) via test visuel réel |
+| 2026-09-06 16:37 | `c02f6a4` | CORS multi-origine (tunnel) + icônes Lucide | Support tunnel VS Code pour test mobile |
+| 2026-09-06 17:00 | `afd10c2` | Écrans auth (login/signup) + routage, délégué à OpenCode | 2 bugs runtime trouvés et corrigés (proxy Vite, Content-Type vide) via test navigateur réel |
+
+---
+
+## 7. Audit de l'ancien projet (contexte, référence)
+
+Un audit technique complet du projet précédent (`GbakaMaps`, Next.js/Firebase/Neon) a été réalisé avant de démarrer cette reconstruction. Conclusions clés qui ont motivé les décisions de ce nouveau projet :
+
+- **Faille critique** : `/api/admin/reports` répondait 200 sans authentification, exposant les emails des utilisateurs. `PATCH /api/stops/[id]` était modifiable par n'importe qui.
+- **Données** : 99,3% des 31 562 arrêts en base n'avaient pas de nom (cause : requête Overpass avec `>;` + `out skel qt`, tags OSM inventés qui ne renvoyaient aucun résultat en pratique).
+- **App mobile** : ne compilait pas (28 erreurs TypeScript), clés Firebase/Google Maps jamais configurées.
+- **Score global de l'audit** : 3,1/10.
+
+Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la conversation d'origine si le détail est nécessaire. Les décisions de ce nouveau projet qui en découlent directement sont documentées en §4 avec leur justification.
+
+---
+
+## 8. Points d'attention
+
+### Bugs connus / non résolus
+- Aucun bug connu non résolu au 2026-09-06 17:05.
+
+### Risques techniques identifiés
+- **Bundle frontend à 1,3 Mo** (gzip ~365 Ko), dû à MapLibre. Pas encore de code-splitting. Acceptable pour le MVP, à surveiller si le bundle continue de grossir.
+- **Aucun test end-to-end front+back** — les tests frontend mockent `fetch`, les tests backend n'impliquent pas de vrai navigateur. Le câblage complet n'est vérifié que manuellement (Playwright ad hoc pendant le développement, pas dans la suite de tests committée).
+- **Horaires GTFS obsolètes** (flux datant de fin 2021) — si une fonctionnalité d'horaires est envisagée un jour, ne pas se fier à ce flux, chercher une source à jour.
+
+### Contraintes / configurations particulières
+- **Port PostgreSQL 5433, pas 5432** sur cette machine (conflit avec un PostgreSQL natif Windows préexistant).
+- **Deux `.env` différents pour la DB** (racine = hostname Docker `db`, `backend/.env` = `localhost:5433`) — voir §3.
+- **`VITE_API_URL=/api`** nécessite le proxy Vite configuré dans `vite.config.ts` ET une règle équivalente côté reverse proxy en production — ne jamais oublier cette dépendance en déployant.
+- **`docker compose up -d` seul ne recharge PAS les variables d'environnement d'un conteneur déjà créé** — utiliser `--force-recreate` après toute modification de `.env` qui doit prendre effet immédiatement, et vérifier avec `docker compose exec <service> printenv <VAR>`.
+
+### Erreurs déjà rencontrées à ne pas reproduire
+- Ne jamais `taskkill` un PID trouvé par scan de port sans vérifier son nom de process au préalable.
+- Ne jamais considérer `tsc --noEmit` + `vite build` verts comme une preuve qu'une app frontend fonctionne réellement — toujours vérifier en navigateur réel (idéalement piloté, avec captures) avant de déclarer un travail terminé.
+- Ne jamais supposer qu'un `.env` correct implique que le conteneur Docker en cours d'exécution le reflète.
+
+---
+
+## 9. Tâches restantes
+
+### 🔴 Priorité haute
+- Écran favoris (liste + suppression depuis l'UI)
+- Écran signalements (création + liste "mes signalements")
+- Écran de modération admin (liste des signalements, changement de statut)
+
+### 🟠 Priorité moyenne
+- Écran/UI pour le calcul d'itinéraire (`routing`)
+- Tests d'intégration end-to-end front+back (au moins un parcours critique testé avec un vrai navigateur, pas seulement fetch mocké)
+- Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir
+
+### 🟢 Priorité faible
+- WebSocket/realtime pour la modération (design esquissé en §4, non implémenté — à ne considérer qu'après les écrans manquants ci-dessus)
+- CI/CD (délibérément non prioritaire tant que le MVP n'est pas stabilisé)
+- Réexaminer le mode "driving" unique d'OSRM si une instance auto-hébergée avec plusieurs profils devient disponible
+
+---
+
+## 10. Prochaine action
+
+**Reprendre par l'écran favoris ou signalements** (backend déjà prêt et testé pour les deux, le choix entre les deux est libre). Pattern à suivre : références `LoginPage.tsx`/`SignupPage.tsx` et `useAuth.ts` pour la convention de page + hook, `HomePage.tsx` pour l'intégration dans la mise en page existante. **Après toute implémentation frontend, systématiquement vérifier en navigateur réel (pas seulement tsc/build/vitest)** avant de commiter — cf. §8, deux bugs runtime ont échappé aux trois vérifications automatisées lors des deux derniers lots de travail.
+
+---
+
+## 11. Historique des sessions
+
+### Session 1 — 2026-09-05 → 2026-09-06 (Claude Opus 5 / Sonnet 5, alternées)
+
+Audit complet de l'ancien projet `GbakaMaps` (score 3,1/10, voir §7), décision de reconstruction validée par l'utilisateur, puis construction complète de ce nouveau projet du squelette backend jusqu'aux écrans d'authentification frontend (10 commits, voir §6). Deux incidents opérationnels gérés en cours de route (Docker Desktop tué par erreur, conteneur backend connecté à l'ancienne base Neon) — tous deux résolus sans perte de données. Délégation à des agents externes (OpenCode, modèle gratuit `muse-spark-1.3-contributor-free`) testée et validée sur 3 modules/lots (favorites, reports, passe UX, écrans auth), Codex CLI indisponible (quota gratuit épuisé jusqu'au 30/09/2026), Cline CLI mentionné par l'utilisateur mais pas encore essayé. Ce fichier `PROJECT_MEMORY.md` créé à la demande explicite de l'utilisateur à la fin de cette session.
