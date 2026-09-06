@@ -34,12 +34,32 @@ export const stopTypeEnum = z.enum([
   'STATION',
 ]);
 
+// Tags de mode de transport présents sur un arrêt (indépendants de
+// `stopType`, qui ne retient qu'UN type dominant à l'affichage — voir
+// import-gtfs.ts `stopTypeFromTransportTypes`). Un arrêt `BUS_STOP` peut
+// très bien aussi accueillir des gbaka : filtrer sur ces booléens permet
+// "montre-moi tout ce qui prend des gbaka ici", pas seulement les arrêts
+// affichés en priorité comme tels.
+export const stopModeEnum = z.enum(['gbaka', 'woroworo', 'taxi', 'mototaxi']);
+
+// Liste séparée par des virgules (ex. "gbaka,woroworo") — sémantique OU : un
+// arrêt correspond s'il porte AU MOINS un des modes demandés.
+const stopModesListSchema = z
+  .string()
+  .transform((val) => val.split(',').map((s) => s.trim()).filter(Boolean))
+  .pipe(z.array(stopModeEnum).min(1))
+  .optional();
+
 export const nearbyStopsQuerySchema = z.object({
   lat: latSchema,
   lon: lonSchema,
   radius: z.coerce.number().int().min(100).max(20000).default(2000),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   type: stopTypeEnum.optional(),
+  modes: stopModesListSchema,
+  // Ne retient que les arrêts desservis par cette ligne précise — filtre
+  // "ligne/trajet" demandé (phase 2, PROJECT_MEMORY.md §12).
+  lineId: z.string().uuid('Identifiant de ligne invalide').optional(),
 });
 
 export const stopIdParamsSchema = z.object({

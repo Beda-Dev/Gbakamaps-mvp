@@ -28,6 +28,8 @@ export async function stopsRoutes(app: FastifyInstance) {
       radiusMeters: query.radius,
       limit: query.limit,
       type: query.type,
+      modes: query.modes,
+      lineId: query.lineId,
     });
 
     return reply.send({

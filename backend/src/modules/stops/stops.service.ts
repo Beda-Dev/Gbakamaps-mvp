@@ -37,18 +37,45 @@ function toApiStop<T extends StopWithLines>(stop: T) {
   return { ...rest, lines: stopLines.map((sl) => sl.line) };
 }
 
+// Colonnes booléennes réelles du modèle Stop pour chaque mode filtrable —
+// whitelist stricte (jamais interpoler un nom de colonne venu de l'entrée
+// utilisateur directement dans du SQL, même après validation Zod amont).
+const STOP_MODE_COLUMNS: Record<string, string> = {
+  gbaka: 'gbaka',
+  woroworo: 'woroworo',
+  taxi: 'taxi',
+  mototaxi: 'mototaxi',
+};
+
 export interface FindNearbyParams {
   lat: number;
   lon: number;
   radiusMeters: number;
   limit: number;
   type?: string;
+  modes?: string[];
+  lineId?: string;
 }
 
 export async function findNearby(params: FindNearbyParams) {
-  const { lat, lon, radiusMeters, limit, type } = params;
+  const { lat, lon, radiusMeters, limit, type, modes, lineId } = params;
 
   const typeFilter = type ? Prisma.sql`AND "stopType" = ${type}::"StopType"` : Prisma.empty;
+
+  // Sémantique OU entre modes demandés : un arrêt correspond s'il porte AU
+  // MOINS un des modes filtrés (ex. modes=gbaka,woroworo -> gbaka=true OR
+  // woroworo=true), pas une intersection stricte.
+  const modesFilter =
+    modes && modes.length > 0
+      ? Prisma.sql`AND (${Prisma.join(
+          modes.map((m) => Prisma.raw(`"${STOP_MODE_COLUMNS[m]}" = true`)),
+          ' OR '
+        )})`
+      : Prisma.empty;
+
+  const lineFilter = lineId
+    ? Prisma.sql`AND EXISTS (SELECT 1 FROM "stop_lines" sl WHERE sl."stopId" = "stops"."id" AND sl."lineId" = ${lineId})`
+    : Prisma.empty;
 
   // ST_DWithin exploite l'index GiST sur "geog" — pas de scan complet de la
   // table même avec des centaines de milliers d'arrêts.
@@ -57,6 +84,8 @@ export async function findNearby(params: FindNearbyParams) {
     FROM "stops"
     WHERE ST_DWithin("geog", ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusMeters})
     ${typeFilter}
+    ${modesFilter}
+    ${lineFilter}
     ORDER BY distance ASC
     LIMIT ${limit}
   `);

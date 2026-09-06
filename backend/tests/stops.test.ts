@@ -20,6 +20,8 @@ describe('stops module', () => {
   let stopAId = '';
   let stopBId = '';
   let stopCId = '';
+  let stopDId = '';
+  let testLineId = '';
 
   beforeAll(async () => {
     app = await buildApp();
@@ -34,14 +36,33 @@ describe('stops module', () => {
     const stopC = await prisma.stop.create({
       data: { name: 'Yopougon Gesco [TEST]', lat: pointC.lat, lon: pointC.lon, stopType: 'GBAKA_STOP' },
     });
+    // Même position que A : sert aux tests de filtre par mode/ligne (booléen
+    // gbaka=true, distinct du `stopType` qui ne retient qu'un mode dominant).
+    const stopD = await prisma.stop.create({
+      data: {
+        name: 'Arrêt Gbaka Adjamé [TEST]',
+        lat: pointA.lat,
+        lon: pointA.lon,
+        stopType: 'BUS_STOP',
+        gbaka: true,
+      },
+    });
+
+    const testLine = await prisma.transportLine.create({
+      data: { name: 'Ligne Test [TEST]', transportType: 'GBAKA', externalRef: 'test-line-filters' },
+    });
+    await prisma.stopLine.create({ data: { stopId: stopD.id, lineId: testLine.id } });
 
     stopAId = stopA.id;
     stopBId = stopB.id;
     stopCId = stopC.id;
+    stopDId = stopD.id;
+    testLineId = testLine.id;
   });
 
   afterAll(async () => {
-    await prisma.stop.deleteMany({ where: { id: { in: [stopAId, stopBId, stopCId] } } });
+    await prisma.stop.deleteMany({ where: { id: { in: [stopAId, stopBId, stopCId, stopDId] } } });
+    await prisma.transportLine.delete({ where: { id: testLineId } });
     await app.close();
     await prisma.$disconnect();
   });
@@ -204,6 +225,73 @@ describe('stops module', () => {
       // en premier, ce serait un 400 (id mal formé) plutôt qu'un vrai résultat.
       const res = await app.inject({ method: 'GET', url: '/api/stops/search?q=adjamé' });
       expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('filtres (GET /stops/nearby)', () => {
+    it('modes=gbaka inclut D (gbaka=true) et exclut A (gbaka=false)', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100&modes=gbaka`,
+      });
+      expect(res.statusCode).toBe(200);
+      const ids = res.json().data.stops.map((s: { id: string }) => s.id);
+      expect(ids).toContain(stopDId);
+      expect(ids).not.toContain(stopAId);
+    });
+
+    it('modes=woroworo,taxi (sémantique OU) — D exclu car ni woroworo ni taxi', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100&modes=woroworo,taxi`,
+      });
+      expect(res.statusCode).toBe(200);
+      const ids = res.json().data.stops.map((s: { id: string }) => s.id);
+      expect(ids).not.toContain(stopDId);
+    });
+
+    it('modes invalide (mode inexistant) → 400', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100&modes=avion`,
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('lineId ne retient que les arrêts desservis par cette ligne', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100&lineId=${testLineId}`,
+      });
+      expect(res.statusCode).toBe(200);
+      const ids = res.json().data.stops.map((s: { id: string }) => s.id);
+      expect(ids).toContain(stopDId);
+      expect(ids).not.toContain(stopAId);
+    });
+
+    it('lineId mal formé (pas un UUID) → 400', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100&lineId=pas-un-uuid`,
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('combine type ET modes (ET logique entre les deux filtres différents)', async () => {
+      // D est BUS_STOP + gbaka=true : type=BUS_STOP AND modes=gbaka doit le
+      // retrouver ; type=STATION AND modes=gbaka ne doit rien retrouver (A
+      // est STATION mais gbaka=false, D est gbaka=true mais BUS_STOP).
+      const resMatch = await app.inject({
+        method: 'GET',
+        url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100&type=BUS_STOP&modes=gbaka`,
+      });
+      expect(resMatch.json().data.stops.map((s: { id: string }) => s.id)).toContain(stopDId);
+
+      const resNoMatch = await app.inject({
+        method: 'GET',
+        url: `/api/stops/nearby?lat=${pointA.lat}&lon=${pointA.lon}&radius=100&type=STATION&modes=gbaka`,
+      });
+      expect(resNoMatch.json().data.stops.map((s: { id: string }) => s.id)).not.toContain(stopDId);
     });
   });
 });
