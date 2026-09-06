@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useHealth } from '@/hooks/useHealth';
 import { useNearbyStops } from '@/hooks/useNearbyStops';
+import { useAuth } from '@/hooks/useAuth';
+import { useFavorites } from '@/hooks/useFavorites';
 import { AuthStatus } from '@/components/AuthStatus';
 import { StopsMap } from '@/components/StopsMap';
-import { XIcon } from '@/components/icons';
+import { LoaderIcon, StarIcon, XIcon } from '@/components/icons';
 import type { Stop } from '@/lib/api/types';
 
 // Plateau, Abidjan — point de départ par défaut avant géolocalisation.
@@ -12,6 +15,65 @@ const DEFAULT_CENTER = { lat: 5.32, lon: -4.02 };
 interface GeoCenter {
   lat: number;
   lon: number;
+}
+
+// Étoile favori dans le panneau détail : visiteur anonyme → /login (aucun
+// appel API qui échouerait en 401), connecté → ajout/retrait du favori.
+function DetailFavoriteButton({ stop }: { stop: Stop }) {
+  const { user, isLoading: authLoading } = useAuth();
+  const { isFavorite, addFavorite, removeFavorite, isMutating } = useFavorites();
+  const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
+
+  const favorite = isFavorite(stop.id);
+  const pending = authLoading || isMutating;
+
+  async function handleClick() {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setError(null);
+    try {
+      if (favorite) {
+        await removeFavorite(stop.id);
+      } else {
+        await addFavorite(stop.id);
+      }
+    } catch {
+      setError("Impossible de mettre à jour ce favori. Réessayez.");
+    }
+  }
+
+  return (
+    <span className="home__favorite-wrap">
+      <button
+        type="button"
+        className={`home__favorite-btn${favorite ? ' is-active' : ''}`}
+        onClick={handleClick}
+        disabled={pending}
+        aria-label={favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+        aria-pressed={favorite}
+        title={favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+      >
+        {pending ? (
+          <LoaderIcon className="icon-spin" width={18} height={18} aria-hidden="true" />
+        ) : (
+          <StarIcon
+            width={18}
+            height={18}
+            aria-hidden="true"
+            fill={favorite ? 'currentColor' : 'none'}
+          />
+        )}
+      </button>
+      {error && (
+        <span className="home__favorite-error" role="alert">
+          {error}
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function HomePage() {
@@ -124,7 +186,10 @@ export function HomePage() {
             >
               <XIcon width={18} height={18} aria-hidden="true" />
             </button>
-            <h2>{selectedStop.name ?? 'Arrêt sans nom'}</h2>
+            <div className="home__detail-title">
+              <h2>{selectedStop.name ?? 'Arrêt sans nom'}</h2>
+              <DetailFavoriteButton stop={selectedStop} />
+            </div>
             <p>{selectedStop.stopType}</p>
             {selectedStop.lines.length > 0 && (
               <ul className="home__lines">

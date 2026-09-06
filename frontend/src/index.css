@@ -2,6 +2,12 @@
   --color-primary: #0a9396;
   --color-bg: #fafafa;
   --color-text: #14213d;
+  /* Hauteur fixe de .home__topbar — partagée avec .home__detail (desktop)
+     pour que le panneau latéral commence SOUS la barre plutôt que de lui
+     disputer l'empilement via z-index (cause réelle d'un bug constaté en
+     navigateur : la barre du haut interceptait les clics sur le bouton
+     favori situé en haut du panneau, les deux zones se chevauchant). */
+  --topbar-height: 3.625rem;
   color-scheme: light;
 }
 
@@ -199,10 +205,17 @@ button:disabled {
     opacity 0.25s ease;
 }
 
-/* Desktop : panneau latéral fixe à droite au lieu du bottom-sheet. */
+/* Desktop : panneau latéral fixe à droite au lieu du bottom-sheet.
+   Commence SOUS .home__topbar (top: var(--topbar-height), pas 0) — un
+   panneau démarrant à top:0 chevauchait la barre du haut, rendant le
+   bouton favori (en haut du panneau) et le lien "Favoris"/"Déconnexion"
+   (dans la barre) mutuellement inaccessibles au clic selon le z-index.
+   Séparer les deux zones dans l'espace règle le problème à la racine,
+   pas un empilement de z-index — bug constaté en pilotant l'app dans un
+   vrai navigateur (Playwright), invisible à la seule lecture du CSS. */
 @media (min-width: 768px) {
   .home__detail {
-    top: 0;
+    top: var(--topbar-height);
     bottom: 0;
     left: auto;
     right: 0;
@@ -459,7 +472,8 @@ button:disabled {
   padding: 0.4rem 1rem;
   background: white;
   border-bottom: 1px solid #eee;
-  min-height: 2.5rem;
+  height: var(--topbar-height);
+  box-sizing: border-box;
 }
 
 /* --- État de connexion (bandeau discret sur la page d'accueil). ----------- */
@@ -649,6 +663,226 @@ button:disabled {
 
 @media (min-width: 768px) {
   .auth__card {
+    padding: 2rem;
+  }
+}
+
+.home__detail-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Dégage la zone occupée par .home__detail-close (position absolute,
+     right:0.75rem, 44px de large) — sans cette marge, le bouton favori
+     (44px, en fin de ligne) se retrouve exactement sous le bouton fermer
+     et intercepte ses clics. Bug réel constaté en pilotant l'app dans un
+     vrai navigateur (Playwright), pas visible à la seule lecture du CSS. */
+  padding-right: 2.5rem;
+}
+
+.home__detail-title h2 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.home__favorite-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+}
+
+.home__favorite-btn {
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #555;
+  flex: none;
+}
+
+.home__favorite-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.home__favorite-btn.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.home__favorite-error {
+  font-size: 0.8rem;
+  color: #ae2012;
+}
+
+/* --- Page favoris (mobile-first, mêmes tokens que le reste). ---------------- */
+.favorites {
+  min-height: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+}
+
+.favorites__card {
+  width: 100%;
+  max-width: 40rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-self: flex-start;
+}
+
+.favorites__title {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.favorites__subtitle {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.favorites__back {
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: none;
+  align-self: flex-start;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.favorites__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.favorites__item {
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.favorites__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.favorites__name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorites__meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.favorites__lines {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.favorites__lines li {
+  border-left: 4px solid;
+  padding-left: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.favorites__remove {
+  border: 1px solid var(--color-primary);
+  background: white;
+  color: var(--color-primary);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.favorites__remove:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.favorites__status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  background: white;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+}
+
+.favorites__status--error {
+  color: #ae2012;
+  background: #fdf0ee;
+  border: 1px solid #f3c4bd;
+}
+
+.favorites__retry {
+  border: 1px solid var(--color-primary);
+  background: white;
+  color: var(--color-primary);
+  border-radius: 6px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.favorites__retry:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.favorites__empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #555;
+}
+
+.favorites__empty a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+@media (min-width: 768px) {
+  .favorites__card {
     padding: 2rem;
   }
 }
