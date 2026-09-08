@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useHealth } from '@/hooks/useHealth';
-import { useNearbyStops } from '@/hooks/useNearbyStops';
+import { NEARBY_STOPS_LIMIT, useNearbyStops } from '@/hooks/useNearbyStops';
 import { useAuth } from '@/hooks/useAuth';
 import { useFavorites } from '@/hooks/useFavorites';
 import {
@@ -994,7 +994,8 @@ export function HomePage() {
 
       {stops.data && (
         <p className="home__count">
-          {stops.data.count} arrêt{stops.data.count > 1 ? 's' : ''} dans un rayon de{' '}
+          {stops.data.count >= NEARBY_STOPS_LIMIT ? `${NEARBY_STOPS_LIMIT}+` : stops.data.count} arrêt
+          {stops.data.count > 1 ? 's' : ''} dans un rayon de{' '}
           <label className="home__radius-label">
             <span className="sr-only">Rayon de recherche</span>
             <select

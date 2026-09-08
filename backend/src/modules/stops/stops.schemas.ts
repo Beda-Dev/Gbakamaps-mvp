@@ -54,7 +54,14 @@ export const nearbyStopsQuerySchema = z.object({
   lat: latSchema,
   lon: lonSchema,
   radius: z.coerce.number().int().min(100).max(20000).default(2000),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  // Plafond remonté de 100 à 500 le 2026-09-08 : la limite basse datait des
+  // Markers DOM individuels (StopsMap avant §12.11), coûteux au-delà de
+  // quelques centaines. Depuis le passage à une couche GeoJSON groupée
+  // (clustering MapLibre/supercluster), la carte encaisse plusieurs
+  // centaines de points sans ralentir — la limite de 100 n'avait plus de
+  // justification technique et causait un vrai bug produit (compteur
+  // "100 arrêts" trompeur car tronqué en zone dense, ex. Plateau).
+  limit: z.coerce.number().int().min(1).max(500).default(50),
   type: stopTypeEnum.optional(),
   modes: stopModesListSchema,
   // Ne retient que les arrêts desservis par cette ligne précise — filtre

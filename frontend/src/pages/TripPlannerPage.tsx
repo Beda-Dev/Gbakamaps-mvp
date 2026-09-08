@@ -9,11 +9,12 @@
 // les horaires GTFS 2021 ou une approximation, coût vérifié par un admin ou
 // indicatif) — jamais présentée comme une donnée exacte garantie.
 // =============================================================================
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStopSearch } from '@/hooks/useStopSearch';
 import { usePlaceSearch } from '@/hooks/usePlaceSearch';
-import { StopsMap, type TripSegment } from '@/components/StopsMap';
+import { useTripSegments } from '@/hooks/useTripSegments';
+import { StopsMap } from '@/components/StopsMap';
 import {
   formatTripCost,
   formatTripDistance,
@@ -40,39 +41,6 @@ import type { Stop, TransportType } from '@/lib/api/types';
 // principale (HomePage.tsx), avant toute sélection d'origine/destination.
 const DEFAULT_MAP_CENTER = { lat: 5.32, lon: -4.02 };
 
-// Reconstruit les segments à afficher sur la carte pour un plan donné, à
-// partir des coordonnées réelles d'origine/destination et des arrêts de
-// montée/descente de chaque étape "ride". AUCUNE géométrie de voirie n'existe
-// pour ces segments (shapes.txt absent des données GTFS importées, cf.
-// PROJECT_MEMORY.md) — ce sont des lignes droites entre points réels,
-// jamais un tracé de rue exact (voir avertissement affiché sous la carte).
-function buildTripSegments(plan: TripPlan, origin: TripCoordinates, destination: TripCoordinates): TripSegment[] {
-  const segments: TripSegment[] = [];
-  let cursor: TripCoordinates = origin;
-  plan.steps.forEach((step, i) => {
-    if (step.type === 'ride' && step.boardStop && step.alightStop) {
-      segments.push({
-        kind: 'ride',
-        coordinates: [
-          [step.boardStop.lon, step.boardStop.lat],
-          [step.alightStop.lon, step.alightStop.lat],
-        ],
-        color: step.line?.color ?? '#0A9396',
-      });
-      cursor = step.alightStop;
-      return;
-    }
-    // Étape de marche : son point d'arrivée est l'arrêt de montée de la
-    // prochaine étape "ride" (transfert ou premier embarquement), sinon la
-    // destination finale (dernière étape du plan).
-    const nextRide = plan.steps.slice(i + 1).find((s) => s.type === 'ride');
-    const next: TripCoordinates = nextRide?.boardStop ?? destination;
-    segments.push({ kind: 'walk', coordinates: [[cursor.lon, cursor.lat], [next.lon, next.lat]] });
-    cursor = next;
-  });
-  return segments;
-}
-
 // Icône par mode réel de la ligne empruntée — TAXI/MOTO_TAXI n'apparaissent
 // jamais comme type de ligne dans les données importées (ce sont des
 // stations, pas des trajets fixes, cf. import-gtfs.ts), donc jamais dans un
@@ -91,11 +59,16 @@ interface Place {
   coords: TripCoordinates;
 }
 
+// Bornes ALIGNÉES sur tripPlanQuerySchema (backend, walkRadius max 2000) —
+// bug réel trouvé le 2026-09-08 : l'option "5 km" existait ici mais était
+// systématiquement rejetée en 400 par le backend (jamais testée bout en
+// bout à l'ajout). 2 km reste d'ailleurs déjà généreux pour une marche
+// "acceptée" avant d'embarquer.
 const RADIUS_OPTIONS = [
   { value: 500, label: '500 m' },
   { value: 1000, label: '1 km' },
+  { value: 1500, label: '1,5 km' },
   { value: 2000, label: '2 km' },
-  { value: 5000, label: '5 km' },
 ] as const;
 
 const CRITERIA: { value: OptimizeCriterion; label: string }[] = [
@@ -381,10 +354,16 @@ export function TripPlannerPage() {
   const mapCenter = origin?.coords ?? destination?.coords ?? DEFAULT_MAP_CENTER;
 
   const selectedPlan = trip.data?.plans[expandedIndex] ?? null;
-  const tripSegments = useMemo(() => {
-    if (!selectedPlan || !origin || !destination) return null;
-    return buildTripSegments(selectedPlan, origin.coords, destination.coords);
-  }, [selectedPlan, origin, destination]);
+  // Segments RÉELS (suivant les routes existantes) du plan actuellement
+  // déplié — voir useTripSegments.ts : corrige un vrai bug produit (lignes
+  // droites traversant visuellement la lagune) en réutilisant le même
+  // service de routage que "Itinéraire vers cet arrêt", jamais une simple
+  // ligne à vol d'oiseau sauf en repli si le routage échoue pour un segment.
+  const { segments: tripSegments, isLoading: tripSegmentsLoading } = useTripSegments(
+    selectedPlan,
+    origin?.coords ?? null,
+    destination?.coords ?? null
+  );
 
   function useMyLocation() {
     if (!('geolocation' in navigator)) {
@@ -568,10 +547,14 @@ export function TripPlannerPage() {
             tripSegments={tripSegments}
           />
         </div>
-        {tripSegments && (
+        {tripSegmentsLoading && (
+          <p className="trip-planner__map-hint">Calcul du tracé sur la carte…</p>
+        )}
+        {!tripSegmentsLoading && tripSegments && (
           <p className="trip-planner__map-hint">
-            Tracé approximatif (lignes droites entre arrêts réels) — aucune donnée de tracé de rue
-            n'est disponible pour ces lignes de transport.
+            Tracé suivant les routes existantes (calculé via le même service que l'itinéraire vers un
+            arrêt) — approximatif : nous n'avons pas le tracé exact suivi par ce bus/gbaka, seulement
+            un itinéraire routier plausible entre les mêmes points.
           </p>
         )}
       </div>
