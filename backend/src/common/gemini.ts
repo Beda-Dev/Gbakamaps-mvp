@@ -32,7 +32,14 @@ export function isGeminiConfigured(): boolean {
   return GEMINI_KEYS.length > 0;
 }
 
-const REQUEST_TIMEOUT_MS = 15_000;
+// 25s (pas 15s initialement) : vérifié empiriquement le 2026-09-08 qu'un
+// appel generateContent réel peut légitimement prendre jusqu'à ~35s en cas
+// de forte demande côté Google ("This model is currently experiencing high
+// demand", 503 transitoire) — un timeout trop court coupait des appels qui
+// auraient fini par réussir, sur les DEUX clés à la fois (mauvaise
+// coïncidence, pas un vrai indisponibilité). Toujours borné : jamais une
+// requête qui pendrait indéfiniment.
+const REQUEST_TIMEOUT_MS = 25_000;
 
 interface GeminiResponse {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -45,10 +52,23 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      // Température basse : on veut une reformulation fidèle des faits
-      // fournis dans le prompt, pas une production créative qui risquerait
-      // de dériver des données réelles transmises.
-      generationConfig: { temperature: 0.3, maxOutputTokens: 500 },
+      generationConfig: {
+        // Température basse : on veut une reformulation fidèle des faits
+        // fournis dans le prompt, pas une production créative qui
+        // risquerait de dériver des données réelles transmises.
+        temperature: 0.3,
+        maxOutputTokens: 800,
+        // `gemini-flash-latest` fait du raisonnement interne par défaut
+        // ("thinking": true, vérifié via GET /v1beta/models) qui consomme
+        // une part du budget `maxOutputTokens` AVANT le texte final —
+        // bug réel constaté le 2026-09-08 : plusieurs réponses tronquées
+        // en plein milieu d'une phrase alors que `finishReason` était
+        // "MAX_TOKENS". Désactivé ici (thinkingBudget: 0) : on ne demande
+        // qu'une simple reformulation de faits déjà donnés, pas un
+        // raisonnement — confirmé empiriquement que ça élimine la
+        // troncature et accélère nettement la réponse.
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -58,11 +78,18 @@ async function callGemini(apiKey: string, prompt: string): Promise<string> {
   }
 
   const data = (await response.json().catch(() => null)) as GeminiResponse | null;
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  // Concatène TOUTES les parties de texte, pas seulement la première — un
+  // second bug réel constaté le même jour : la réponse peut être scindée
+  // en plusieurs `parts`, ne lire que parts[0] tronquait silencieusement le
+  // texte même quand la réponse complète était bien présente.
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((p) => p.text ?? '')
+    .join('')
+    .trim();
   if (!text) {
     throw new Error('Réponse Gemini vide ou mal formée');
   }
-  return text.trim();
+  return text;
 }
 
 // Génère du texte à partir d'un prompt, avec repli clé 1 → clé 2. Lève
