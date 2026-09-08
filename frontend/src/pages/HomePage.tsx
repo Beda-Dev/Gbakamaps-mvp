@@ -18,6 +18,7 @@ import {
   type RouteProfile,
 } from '@/hooks/useRoute';
 import { haversineDistanceMeters, useLiveTracking } from '@/hooks/useLiveTracking';
+import { bearingBetween, cardinalLabel, useDeviceOrientation } from '@/hooks/useDeviceOrientation';
 import { POI_CATEGORY_LABELS, useNearbyPois } from '@/hooks/useNearbyPois';
 import { useNeighborhoods } from '@/hooks/useNeighborhoods';
 import { useCommunes, type Commune } from '@/hooks/useCommunes';
@@ -133,6 +134,7 @@ function RouteToStopButton({
   onRequestLocation,
   onGeometryChange,
   onLivePositionChange,
+  onHeadingChange,
 }: {
   stop: Stop;
   userLocation: { lat: number; lon: number } | null;
@@ -140,6 +142,7 @@ function RouteToStopButton({
   onRequestLocation: () => void;
   onGeometryChange: (geometry: RouteGeometry | null) => void;
   onLivePositionChange: (position: { lat: number; lon: number }) => void;
+  onHeadingChange: (heading: number | null) => void;
 }) {
   const route = useRoute();
   const {
@@ -149,6 +152,18 @@ function RouteToStopButton({
     start: startTracking,
     stop: stopTracking,
   } = useLiveTracking();
+  // Boussole — voir useDeviceOrientation.ts pour la logique iOS/Android/
+  // desktop. `heading` reste null tant qu'aucune donnée capteur réelle n'a
+  // été reçue (pas de capteur, permission refusée, ou desktop) : le repli
+  // "direction à suivre" (calculée, toujours dispo) prend le relais ci-dessous.
+  const {
+    heading,
+    hasReceivedData: hasHeadingData,
+    needsExplicitPermission,
+    permission: headingPermission,
+    requestPermission: requestHeadingPermission,
+    stop: stopOrientation,
+  } = useDeviceOrientation();
   const [expanded, setExpanded] = useState(false);
   const [lastProfile, setLastProfile] = useState<RouteProfile | null>(null);
   // Arrivée constatée (< 30 m) : le suivi est arrêté automatiquement, le
@@ -172,6 +187,23 @@ function RouteToStopButton({
     }
   }, [livePosition, onLivePositionChange]);
 
+  // Cap réel du capteur remonté à HomePage (fait pivoter la flèche sur le
+  // point bleu) — jamais transmis tant qu'aucune donnée capteur réelle n'a
+  // été reçue (hasHeadingData), même si `heading` a une valeur résiduelle.
+  useEffect(() => {
+    onHeadingChange(hasHeadingData ? heading : null);
+  }, [heading, hasHeadingData, onHeadingChange]);
+
+  // Direction à suivre vers la destination — calcul purement géométrique
+  // (bearingBetween), toujours disponible dès qu'on a une position live,
+  // indépendant du capteur d'orientation. Repère utile même sans boussole
+  // (desktop, permission refusée, appareil sans capteur) : dit "de quel
+  // côté marcher", pas "dans quel sens le téléphone est tenu" (ce que fait
+  // `heading` — les deux informations sont complémentaires, pas des replis
+  // l'une de l'autre).
+  const bearingToDestination =
+    livePosition === null ? null : bearingBetween(livePosition, { lat: stop.lat, lon: stop.lon });
+
   // Arrivée automatique : sous 30 m on affiche "Vous êtes arrivé(e) !" et on
   // arrête le watch (pas de watch orphelin qui tournerait pour rien).
   useEffect(() => {
@@ -186,6 +218,7 @@ function RouteToStopButton({
       // Replier le panneau itinéraire coupe aussi le suivi : sinon le watch
       // tournerait sans aucun bouton visible pour l'arrêter.
       stopTracking();
+      stopOrientation();
       setExpanded(false);
       return;
     }
@@ -221,6 +254,7 @@ function RouteToStopButton({
     // Effacer l'itinéraire coupe aussi le suivi : pas de suivi orphelin sans
     // tracé ni destination associée.
     stopTracking();
+    stopOrientation();
     setHasArrived(false);
     onGeometryChange(null);
     route.reset();
@@ -229,6 +263,11 @@ function RouteToStopButton({
   function handleStartTracking() {
     setHasArrived(false);
     startTracking();
+    // Le clic sur "Suivre mon trajet" EST le geste utilisateur requis par
+    // iOS pour la permission d'orientation (voir useDeviceOrientation.ts) —
+    // sur Android/desktop, requestPermission() attache directement les
+    // écouteurs sans rien demander (pas de second appel nécessaire).
+    void requestHeadingPermission();
   }
 
   return (
@@ -332,6 +371,33 @@ function RouteToStopButton({
                 {isTracking && remainingMeters !== null && (
                   <p className="home__tracking-info" role="status">
                     Distance restante : {formatRouteDistance(remainingMeters)}
+                  </p>
+                )}
+                {/* Cap boussole (capteur réel) si reçu, sinon direction
+                    calculée vers la destination (toujours disponible dès
+                    qu'on a une position live) — jamais les deux confondus,
+                    labellés différemment (§9/§12.8, boussole). */}
+                {isTracking && bearingToDestination !== null && (
+                  <p className="home__tracking-info home__tracking-heading" role="status">
+                    {hasHeadingData
+                      ? `Cap : ${cardinalLabel(heading!)}`
+                      : `Direction à suivre : ${cardinalLabel(bearingToDestination)}`}
+                  </p>
+                )}
+                {isTracking &&
+                  needsExplicitPermission &&
+                  headingPermission === 'unknown' && (
+                    <button
+                      type="button"
+                      className="home__retry-btn"
+                      onClick={() => void requestHeadingPermission()}
+                    >
+                      Activer la boussole
+                    </button>
+                  )}
+                {isTracking && headingPermission === 'denied' && (
+                  <p className="home__tracking-info home__tracking-heading">
+                    Boussole indisponible (permission refusée) — direction calculée affichée à la place.
                   </p>
                 )}
                 {isTracking &&
@@ -633,6 +699,13 @@ export function HomePage() {
     setUserLocation(pos);
   }, []);
 
+  // Cap de l'appareil remonté par RouteToStopButton pendant le suivi — fait
+  // pivoter la flèche sur le point bleu (StopsMap), jamais la carte entière.
+  const [headingDeg, setHeadingDeg] = useState<number | null>(null);
+  const handleHeadingChange = useCallback((heading: number | null) => {
+    setHeadingDeg(heading);
+  }, []);
+
   // Sélection depuis la barre de recherche (phase 2, §12) : contrairement à
   // un clic sur un marqueur déjà visible, l'arrêt trouvé peut être hors de
   // la zone actuellement chargée — on recentre la carte dessus (ce qui
@@ -719,6 +792,7 @@ export function HomePage() {
             neighborhoods={showNeighborhoods ? neighborhoods : null}
             communes={showNeighborhoods ? communes : null}
             focusBounds={focusBounds}
+            headingDeg={headingDeg}
           />
         )}
       </div>
@@ -748,6 +822,7 @@ export function HomePage() {
                 onRequestLocation={requestLocation}
                 onGeometryChange={setRouteGeometry}
                 onLivePositionChange={handleLivePosition}
+                onHeadingChange={handleHeadingChange}
               />
               <ReportToStopButton key={`report-${selectedStop.id}`} stop={selectedStop} />
             </div>

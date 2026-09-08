@@ -139,6 +139,11 @@ interface StopsMapProps {
   stops: Stop[];
   onSelectStop?: (stop: Stop) => void;
   userLocation?: { lat: number; lon: number } | null;
+  // Cap de l'appareil en degrés (0-360, 0 = Nord), null = inconnu (pas de
+  // capteur, permission refusée, ou pas encore reçu) — voir
+  // useDeviceOrientation.ts. Fait pivoter une flèche sur le point bleu,
+  // jamais la carte elle-même (qui reste toujours orientée Nord en haut).
+  headingDeg?: number | null;
   isLocating?: boolean;
   onRecenter?: () => void;
   // Tracé d'itinéraire (GeoJSON LineString, coords [lon, lat]) — null = aucun.
@@ -513,6 +518,7 @@ export function StopsMap({
   stops,
   onSelectStop,
   userLocation,
+  headingDeg,
   isLocating,
   onRecenter,
   routeGeometry,
@@ -529,6 +535,7 @@ export function StopsMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const userMarkerRef = useRef<Marker | null>(null);
+  const headingArrowRef = useRef<HTMLDivElement | null>(null);
   const originMarkerRef = useRef<Marker | null>(null);
   const destinationMarkerRef = useRef<Marker | null>(null);
   const tripSegmentsRef = useRef<TripSegment[] | null>(null);
@@ -848,6 +855,16 @@ export function StopsMap({
     el.className = 'user-location-dot';
     el.setAttribute('aria-label', 'Ma position');
 
+    // Flèche de cap — élément séparé, pivoté indépendamment dans l'effet
+    // suivant (le marqueur entier est recréé à chaque nouvelle position GPS,
+    // le cap arrive à un rythme propre : ne pas coupler les deux évite de
+    // perdre la rotation affichée entre deux positions).
+    const arrow = document.createElement('div');
+    arrow.className = 'user-location-heading';
+    arrow.style.display = 'none';
+    el.appendChild(arrow);
+    headingArrowRef.current = arrow;
+
     userMarkerRef.current?.remove();
     userMarkerRef.current = new Marker({ element: el }).setLngLat([
       userLocation.lon,
@@ -857,8 +874,23 @@ export function StopsMap({
     return () => {
       userMarkerRef.current?.remove();
       userMarkerRef.current = null;
+      headingArrowRef.current = null;
     };
   }, [userLocation, mapReady]);
+
+  // Rotation de la flèche de cap — effet séparé de la création du marqueur
+  // (voir commentaire ci-dessus) : le cap peut être mis à jour bien plus
+  // souvent que la position GPS sans jamais recréer le marqueur.
+  useEffect(() => {
+    const arrow = headingArrowRef.current;
+    if (!arrow) return;
+    if (headingDeg === null || headingDeg === undefined) {
+      arrow.style.display = 'none';
+      return;
+    }
+    arrow.style.display = '';
+    arrow.style.transform = `translateX(-50%) rotate(${headingDeg}deg)`;
+  }, [headingDeg, userLocation]);
 
   // Tracé d'itinéraire : mise à jour en place quand la source existe déjà,
   // suppression nette quand routeGeometry repasse à null. Un nouveau tracé

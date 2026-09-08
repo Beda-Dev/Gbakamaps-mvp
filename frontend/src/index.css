@@ -587,6 +587,25 @@ button:disabled {
   position: relative;
 }
 
+/* Flèche de cap (boussole) — un triangle simple pointant dans la direction
+   de déplacement/orientation de l'appareil, ancré en haut du point bleu et
+   pivoté via `transform: rotate()` (0deg = pointe vers le haut = Nord,
+   cohérent avec une carte toujours Nord en haut). Masqué par défaut
+   (`display:none` posé en JS) tant qu'aucun cap n'est connu — jamais une
+   flèche affichée à une direction inventée. */
+.user-location-heading {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 14px solid #1a73e8;
+  transform-origin: 50% 22px;
+  filter: drop-shadow(0 0 1px white);
+}
+
 .user-location-dot::after {
   content: '';
   position: absolute;
