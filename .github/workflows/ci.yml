@@ -1,0 +1,67 @@
+# CI MINIMALE — GbakaMap MVP.
+#
+# Contexte (voir PROJECT_MEMORY.md §12.17 + §12.19) : le MVP n'est pas encore
+# jugé assez stable pour une CI/CD complète. Ce workflow fait volontairement
+# le minimum utile qui reste VERT sans accès aux services externes :
+#   - typecheck backend + frontend (tsc --noEmit)
+#   - "lint" frontend (le script `lint` = `tsc --noEmit`, il n'y a pas
+#     d'ESLint dans ce repo ; le backend n'a ni lint ni script typecheck,
+#     d'où l'appel direct `tsc` via `npm exec --workspace`)
+#   - tests unitaires frontend (vitest : jsdom + fetch mocké, 86 tests —
+#     vérifié le 2026-09-08, aucun service externe requis)
+#
+# LIMITES ASSUMÉES — ce que ce workflow NE lance PAS, et pourquoi :
+#   - Suite backend (`npm run test --workspace backend`) : EXCLUE. Les tests
+#     backend exigent une vraie base PostgreSQL/PostGIS (philosophie du
+#     projet : zéro mock de la DB sur le chemin nominal) et plusieurs tests
+#     appellent de vrais services externes (Overpass, OpenRouteService,
+#     GraphHopper, Gemini, Mapillary, Panoramax) avec de vraies clés API.
+#     Une CI GitHub standard n'a ni cette DB ni ces secrets : lancer la suite
+#     telle quelle la ferait échouer systématiquement — un workflow qui
+#     échoue toujours au push serait pire que pas de CI du tout.
+#   - Tests e2e Playwright (`test:e2e`) : EXCLUS pour la même raison
+#     (backend Docker + vrais services requis), + navigateurs à installer.
+#   - Aucun secret GitHub n'est requis par ce workflow (décision explicite :
+#     ne pas en ajouter tant que le MVP n'est pas stabilisé).
+#
+# Le jour où une CI complète sera voulue : soit fournir les secrets + un
+# service Postgres/PostGIS au job, soit introduire un mode "CI" avec mocks —
+# ce dernier irait à l'encontre de la philosophie "tester contre le vrai
+# service" du projet, à trancher explicitement avec le propriétaire avant.
+
+name: CI minimale
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Un seul lockfile à la racine (npm workspaces) : `npm ci` installe
+      # backend/ + frontend/ d'un coup. Ne PAS le remplacer par des
+      # `npm ci` par dossier (échouerait : pas de lockfile dans backend/
+      # ni dans frontend/).
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Typecheck backend (tsc --noEmit)
+        run: npm exec --workspace backend -- tsc --noEmit
+
+      # Le script `lint` du frontend = `tsc --noEmit` (pas d'ESLint).
+      - name: Typecheck + lint frontend
+        run: npm run lint --workspace frontend
+
+      # Tests frontend uniquement : jsdom + fetch mocké, aucun service
+      # externe requis. Les tests backend et e2e sont volontairement exclus
+      # (voir l'en-tête de ce fichier).
+      - name: Tests frontend
+        run: npm run test --workspace frontend
