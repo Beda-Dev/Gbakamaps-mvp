@@ -2,8 +2,12 @@
 // Routes du module places — public, lecture seule.
 // =============================================================================
 import type { FastifyInstance } from 'fastify';
-import { nearbyPoisQuerySchema, searchPlacesQuerySchema } from './places.schemas.js';
-import { listNeighborhoods, searchNearbyPois, searchPlaces } from './places.service.js';
+import {
+  listCommunesQuerySchema,
+  nearbyPoisQuerySchema,
+  searchPlacesQuerySchema,
+} from './places.schemas.js';
+import { listCommunes, listNeighborhoods, searchNearbyPois, searchPlaces } from './places.service.js';
 
 export async function placesRoutes(app: FastifyInstance) {
   app.get('/places/search', async (request, reply) => {
@@ -25,5 +29,14 @@ export async function placesRoutes(app: FastifyInstance) {
   app.get('/places/neighborhoods', async (_request, reply) => {
     const neighborhoods = await listNeighborhoods();
     return reply.send({ success: true, data: { neighborhoods, count: neighborhoods.length } });
+  });
+
+  // Communes du Grand Abidjan — vraies limites administratives (polygone +
+  // bbox), avec filtre optionnel par nom pour "chercher/zoomer sur une
+  // commune" (demande explicite de l'utilisateur).
+  app.get('/places/communes', async (request, reply) => {
+    const query = listCommunesQuerySchema.parse(request.query);
+    const communes = await listCommunes(query.q);
+    return reply.send({ success: true, data: { communes, count: communes.length } });
   });
 }

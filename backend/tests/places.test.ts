@@ -188,6 +188,56 @@ describe('places module — quartiers du Grand Abidjan (GET /places/neighborhood
   );
 });
 
+describe('places module — communes du Grand Abidjan (GET /places/communes)', () => {
+  it(
+    'retourne de vraies communes avec un contour fermé (Overpass réel, pas de mock)',
+    async () => {
+      const app = await buildApp();
+      await app.ready();
+      const res = await app.inject({ method: 'GET', url: '/api/places/communes?q=Cocody' });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(true);
+      const communes = body.data.communes as {
+        name: string;
+        adminLevel: string | null;
+        bounds: { south: number; west: number; north: number; east: number };
+        polygon: [number, number][][];
+      }[];
+      expect(communes.length).toBeGreaterThan(0);
+      const cocody = communes.find((c) => c.name === 'Cocody');
+      expect(cocody).toBeDefined();
+      expect(cocody!.adminLevel).toBe('8');
+      // Bbox cohérente (ordre correct, pas inversé).
+      expect(cocody!.bounds.south).toBeLessThan(cocody!.bounds.north);
+      expect(cocody!.bounds.west).toBeLessThan(cocody!.bounds.east);
+      // Au moins un anneau, fermé (premier point == dernier).
+      expect(cocody!.polygon.length).toBeGreaterThan(0);
+      const ring = cocody!.polygon[0];
+      expect(ring.length).toBeGreaterThan(3);
+      expect(ring[0][0]).toBeCloseTo(ring[ring.length - 1][0], 6);
+      expect(ring[0][1]).toBeCloseTo(ring[ring.length - 1][1], 6);
+      await app.close();
+    },
+    25000
+  );
+
+  it(
+    'sans filtre q, retourne plusieurs communes réelles du Grand Abidjan',
+    async () => {
+      const app = await buildApp();
+      await app.ready();
+      const res = await app.inject({ method: 'GET', url: '/api/places/communes' });
+      expect(res.statusCode).toBe(200);
+      const names = (res.json().data.communes as { name: string }[]).map((c) => c.name);
+      expect(names).toContain('Le Plateau');
+      expect(names.length).toBeGreaterThan(3);
+      await app.close();
+    },
+    25000
+  );
+});
+
 describe('places module — gestion des pannes (fetch mocké, déterministe)', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

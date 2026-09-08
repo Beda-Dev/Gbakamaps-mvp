@@ -158,6 +158,13 @@ interface StopsMapProps {
   radiusCircleMeters?: number | null;
   // Étiquettes de quartiers (Overpass, §12.13) — null/undefined/[] = masqué.
   neighborhoods?: { name: string; lat: number; lon: number }[] | null;
+  // Contours réels de communes (Overpass, §12.14) — null/undefined/[] = masqué.
+  communes?: { name: string; polygon: [number, number][][] }[] | null;
+  // Zone à cadrer (sélection d'une commune via recherche) — un simple
+  // "top" (timestamp/compteur) forcerait un nouveau fitBounds même si les
+  // mêmes bounds sont sélectionnées deux fois ; ici, l'objet est recréé à
+  // chaque sélection donc une nouvelle référence suffit à déclencher l'effet.
+  focusBounds?: { south: number; west: number; north: number; east: number } | null;
 }
 
 // Polygone approximatif d'un cercle réel (grand cercle terrestre, pas une
@@ -442,6 +449,65 @@ function upsertNeighborhoodsLayer(map: Map, neighborhoods: { name: string; lat: 
   });
 }
 
+// Contours réels de communes — polygone rempli en transparence + trait plein,
+// couleur dérivée du nom (déterministe, pas aléatoire à chaque rendu) pour
+// distinguer visuellement les communes adjacentes sans avoir à maintenir une
+// palette figée pour une liste qui peut s'étendre.
+const COMMUNES_SOURCE_ID = 'communes';
+const COMMUNES_FILL_LAYER_ID = 'communes-fill';
+const COMMUNES_LINE_LAYER_ID = 'communes-line';
+const COMMUNE_PALETTE = ['#0A9396', '#EE9B00', '#CA6702', '#9B2226', '#005F73', '#94D2BD', '#AE2012', '#E9D8A6'];
+
+function communeColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return COMMUNE_PALETTE[hash % COMMUNE_PALETTE.length];
+}
+
+function upsertCommunesLayer(map: Map, communes: { name: string; polygon: [number, number][][] }[] | null): void {
+  const existing = map.getSource(COMMUNES_SOURCE_ID);
+  if (!communes || communes.length === 0) {
+    if (map.getLayer(COMMUNES_FILL_LAYER_ID)) map.removeLayer(COMMUNES_FILL_LAYER_ID);
+    if (map.getLayer(COMMUNES_LINE_LAYER_ID)) map.removeLayer(COMMUNES_LINE_LAYER_ID);
+    if (existing) map.removeSource(COMMUNES_SOURCE_ID);
+    return;
+  }
+  const data = {
+    type: 'FeatureCollection' as const,
+    features: communes
+      .filter((c) => c.polygon.length > 0)
+      .map((c) => ({
+        type: 'Feature' as const,
+        properties: { name: c.name, color: communeColor(c.name) },
+        geometry: { type: 'MultiPolygon' as const, coordinates: c.polygon.map((ring) => [ring]) },
+      })),
+  };
+  if (existing && existing.type === 'geojson') {
+    (existing as GeoJSONSource).setData(data);
+    return;
+  }
+  map.addSource(COMMUNES_SOURCE_ID, { type: 'geojson', data });
+  const firstSymbolLayer = map.getStyle().layers?.find((l) => l.type === 'symbol');
+  map.addLayer(
+    {
+      id: COMMUNES_FILL_LAYER_ID,
+      type: 'fill',
+      source: COMMUNES_SOURCE_ID,
+      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.06 },
+    },
+    firstSymbolLayer?.id,
+  );
+  map.addLayer(
+    {
+      id: COMMUNES_LINE_LAYER_ID,
+      type: 'line',
+      source: COMMUNES_SOURCE_ID,
+      paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.7 },
+    },
+    firstSymbolLayer?.id,
+  );
+}
+
 export function StopsMap({
   center,
   stops,
@@ -457,6 +523,8 @@ export function StopsMap({
   tripSegments,
   radiusCircleMeters,
   neighborhoods,
+  communes,
+  focusBounds,
 }: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
@@ -466,6 +534,7 @@ export function StopsMap({
   const tripSegmentsRef = useRef<TripSegment[] | null>(null);
   const radiusCircleRef = useRef<number | null>(null);
   const neighborhoodsRef = useRef<{ name: string; lat: number; lon: number }[] | null>(null);
+  const communesRef = useRef<{ name: string; polygon: [number, number][][] }[] | null>(null);
   const stopsPopupRef = useRef<Popup | null>(null);
   // Table de correspondance id → arrêt complet, pour retrouver l'objet Stop
   // réel (nom, lignes…) au clic sur un point de la couche groupée (les
@@ -525,6 +594,7 @@ export function StopsMap({
       upsertStopsSource(map, stopsRef.current);
       if (radiusCircleRef.current) upsertRadiusCircleLayer(map, center, radiusCircleRef.current);
       upsertNeighborhoodsLayer(map, neighborhoodsRef.current);
+      upsertCommunesLayer(map, communesRef.current);
     });
   }
 
@@ -746,6 +816,28 @@ export function StopsMap({
     neighborhoodsRef.current = list;
     upsertNeighborhoodsLayer(map, list);
   }, [neighborhoods, mapReady]);
+
+  // Contours de communes — même logique que les étiquettes de quartiers.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const list = communes ?? null;
+    communesRef.current = list;
+    upsertCommunesLayer(map, list);
+  }, [communes, mapReady]);
+
+  // Cadrage sur une zone (sélection d'une commune via recherche) — un objet
+  // fraîchement créé à chaque sélection suffit à redéclencher l'effet même
+  // pour la même commune choisie deux fois de suite.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !focusBounds) return;
+    const bounds = new LngLatBounds(
+      [focusBounds.west, focusBounds.south],
+      [focusBounds.east, focusBounds.north]
+    );
+    map.fitBounds(bounds, { padding: 40 });
+  }, [focusBounds, mapReady]);
 
   // Marqueur de la position utilisateur (point bleu + halo, style Maps).
   useEffect(() => {

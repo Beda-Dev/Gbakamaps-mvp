@@ -484,6 +484,27 @@ button:disabled {
   color: #6b6b6b;
 }
 
+/* Résultat "commune" — visuellement distinct d'un arrêt (icône lieu, pas de
+   lignes de transport listées), même logique que .trip-field__result--place. */
+.stop-search__result--commune {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  color: #555;
+}
+
+.stop-search__result-tag {
+  margin-left: auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #999;
+  background: #f1f1f1;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  flex-shrink: 0;
+}
+
 .map-style-switcher {
   position: absolute;
   top: calc(var(--search-bar-clearance) + env(safe-area-inset-top, 0px));

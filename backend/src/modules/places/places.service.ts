@@ -254,6 +254,130 @@ out center 200;`;
   return results;
 }
 
+// Limites administratives réelles des communes du Grand Abidjan (relations
+// OSM `boundary=administrative`, `admin_level=8`) — demande explicite de
+// l'utilisateur ("on peut délimiter les quartiers/communes ? Overpass le
+// fait ?"), vérifié empiriquement le 2026-09-06 : Cocody, Le Plateau,
+// Treichville, Marcory, Koumassi, Attécoubé... existent bien comme telles,
+// avec une géométrie réelle reconstructible (testé : 22 segments de voie
+// membres de la relation "Cocody", correctement rassemblés en un unique
+// anneau fermé de 192 points).
+interface OverpassMember {
+  type: string;
+  role: string;
+  ref: number;
+  lat?: number;
+  lon?: number;
+  geometry?: { lat: number; lon: number }[];
+}
+
+interface OverpassRelation {
+  type: 'relation';
+  tags?: Record<string, string>;
+  bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number };
+  members?: OverpassMember[];
+}
+
+export interface CommuneResult {
+  name: string;
+  adminLevel: string | null;
+  bounds: { south: number; west: number; north: number; east: number };
+  // Anneaux [lon, lat] fermés (premier point == dernier) — reconstruits à
+  // partir des segments de voie membres de la relation OSM. Best-effort :
+  // si l'assemblage ne referme pas parfaitement un anneau (topologie OSM
+  // incomplète), l'anneau est quand même renvoyé fermé de force (dernier
+  // point relié au premier) plutôt qu'omis — approximation honnête d'une
+  // vraie limite plutôt qu'une absence totale de contour.
+  polygon: [number, number][][];
+}
+
+// Assemble les segments de voie "outer" d'une relation multipolygone en
+// anneaux fermés — les segments OSM ne sont ni ordonnés ni orientés de
+// façon cohérente entre eux, seuls leurs points d'extrémité partagés
+// permettent de les enchaîner (algorithme standard de reconstruction de
+// multipolygone, appliqué ici en best-effort, pas une librairie GIS complète
+// : suffisant pour un contour visuel, pas pour un usage topologique strict).
+function assembleRingsFromOuterWays(members: OverpassMember[]): [number, number][][] {
+  const outerWays = members.filter((m) => m.type === 'way' && m.role === 'outer' && m.geometry?.length);
+  const segments: [number, number][][] = outerWays.map((w) => w.geometry!.map((p) => [p.lon, p.lat]));
+  const used = new Array(segments.length).fill(false);
+  const eq = (a: [number, number], b: [number, number]) =>
+    Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+
+  const rings: [number, number][][] = [];
+  while (used.some((u) => !u)) {
+    const startIdx = used.findIndex((u) => !u);
+    used[startIdx] = true;
+    let ring = [...segments[startIdx]];
+    let extended = true;
+    while (extended) {
+      extended = false;
+      for (let i = 0; i < segments.length; i++) {
+        if (used[i]) continue;
+        const seg = segments[i];
+        const ringEnd = ring[ring.length - 1];
+        if (eq(ringEnd, seg[0])) {
+          ring = ring.concat(seg.slice(1));
+          used[i] = true;
+          extended = true;
+        } else if (eq(ringEnd, seg[seg.length - 1])) {
+          ring = ring.concat([...seg].reverse().slice(1));
+          used[i] = true;
+          extended = true;
+        }
+      }
+    }
+    // Fermeture forcée si l'assemblage n'a pas naturellement rebouclé
+    // (topologie source incomplète) — mieux qu'un contour ouvert invalide
+    // pour un rendu de polygone.
+    if (!eq(ring[0], ring[ring.length - 1])) ring.push(ring[0]);
+    rings.push(ring);
+  }
+  return rings;
+}
+
+export async function listCommunes(query?: string): Promise<CommuneResult[]> {
+  const { south, west, north, east } = GREATER_ABIDJAN_BOUNDS;
+  const nameFilter = query ? `["name"~"${escapeOverpassRegex(query)}",i]` : '';
+  const overpassQuery = `[out:json][timeout:${REQUEST_TIMEOUT_MS / 1000}];
+relation(${south},${west},${north},${east})["boundary"="administrative"]["admin_level"="8"]${nameFilter};
+out geom;`;
+
+  let response: Response;
+  try {
+    response = await fetch(OVERPASS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT },
+      body: `data=${encodeURIComponent(overpassQuery)}`,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new PlacesServiceError(err instanceof Error ? err.message : 'fetch failed');
+  }
+  if (!response.ok) throw new PlacesServiceError(`Overpass HTTP ${response.status}`);
+
+  const data = (await response.json().catch(() => null)) as { elements: OverpassRelation[] } | null;
+  if (!data) throw new PlacesServiceError('Réponse Overpass invalide');
+
+  const results: CommuneResult[] = [];
+  for (const rel of data.elements) {
+    const name = rel.tags?.name;
+    if (!name || !rel.bounds || !rel.members) continue;
+    results.push({
+      name,
+      adminLevel: rel.tags?.admin_level ?? null,
+      bounds: {
+        south: rel.bounds.minlat,
+        west: rel.bounds.minlon,
+        north: rel.bounds.maxlat,
+        east: rel.bounds.maxlon,
+      },
+      polygon: assembleRingsFromOuterWays(rel.members),
+    });
+  }
+  return results;
+}
+
 // Cherche, parmi les arrêts déjà connus dans un rayon serré autour d'un
 // lieu Overpass, celui dont le nom correspond après normalisation — voir
 // le commentaire sur STOP_MATCH_RADIUS_METERS pour le raisonnement complet

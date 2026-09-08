@@ -46,3 +46,12 @@ export const nearbyPoisQuerySchema = z.object({
 });
 
 export type NearbyPoisQuery = z.infer<typeof nearbyPoisQuerySchema>;
+
+export const listCommunesQuerySchema = z.object({
+  // Optionnel : filtre par nom (recherche directe "par commune", demande
+  // explicite de l'utilisateur) — absent = renvoie toutes les communes du
+  // Grand Abidjan (pour les dessiner sur la carte).
+  q: z.string().trim().min(2).max(100).optional(),
+});
+
+export type ListCommunesQuery = z.infer<typeof listCommunesQuerySchema>;

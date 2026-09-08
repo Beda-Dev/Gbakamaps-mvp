@@ -20,6 +20,7 @@ import {
 import { haversineDistanceMeters, useLiveTracking } from '@/hooks/useLiveTracking';
 import { POI_CATEGORY_LABELS, useNearbyPois } from '@/hooks/useNearbyPois';
 import { useNeighborhoods } from '@/hooks/useNeighborhoods';
+import { useCommunes, type Commune } from '@/hooks/useCommunes';
 import { AuthStatus } from '@/components/AuthStatus';
 import { STOP_TYPE_LABELS, StopsMap } from '@/components/StopsMap';
 import { StopSearchBar } from '@/components/StopSearchBar';
@@ -565,6 +566,19 @@ export function HomePage() {
   // première activation puis mises en cache (staleTime long côté hook).
   const [showNeighborhoods, setShowNeighborhoods] = useState(false);
   const { neighborhoods } = useNeighborhoods(showNeighborhoods);
+  // Contours de commune dessinés avec le même toggle que les étiquettes de
+  // quartier — les deux relèvent conceptuellement du même "contexte de
+  // zone" pour l'utilisateur, pas deux fonctionnalités distinctes à activer
+  // séparément.
+  const { communes } = useCommunes(showNeighborhoods);
+  // Zone à cadrer sur la carte (sélection d'une commune via la recherche) —
+  // un nouvel objet à chaque sélection, jamais réutilisé tel quel.
+  const [focusBounds, setFocusBounds] = useState<Commune['bounds'] | null>(null);
+
+  function handleSelectCommune(commune: Commune) {
+    setShowNeighborhoods(true); // révèle le contour choisi, pas une zone invisible
+    setFocusBounds({ ...commune.bounds });
+  }
   const stops = useNearbyStops(center.lat, center.lon, searchRadius);
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   // Points d'intérêt réels autour de l'arrêt actuellement sélectionné
@@ -668,7 +682,11 @@ export function HomePage() {
           (même audit que la <nav> ci-dessus). */}
       <main className="home__main">
       <div className="home__map">
-        <StopSearchBar near={userLocation ?? center} onSelectStop={handleSelectFromSearch} />
+        <StopSearchBar
+          near={userLocation ?? center}
+          onSelectStop={handleSelectFromSearch}
+          onSelectCommune={handleSelectCommune}
+        />
         {stops.isLoading && (
           <p className="home__status" role="status">
             <span className="spinner" aria-hidden="true" />
@@ -699,6 +717,8 @@ export function HomePage() {
             routeGeometry={routeGeometry}
             radiusCircleMeters={showRadiusCircle ? searchRadius : null}
             neighborhoods={showNeighborhoods ? neighborhoods : null}
+            communes={showNeighborhoods ? communes : null}
+            focusBounds={focusBounds}
           />
         )}
       </div>
