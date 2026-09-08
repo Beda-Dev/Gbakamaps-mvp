@@ -444,7 +444,7 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 - ~~Planificateur de trajet multi-modal réel~~ ✅ fait (commits `95a5145`, `e9d49f3`) — voir §12.7. L'écart produit le plus important identifié en phase 2 est comblé : l'app utilise enfin ses lignes gbaka/woro-woro/bus pour calculer un itinéraire, pas seulement les afficher.
 - ~~Code-splitting du bundle frontend~~ ✅ fait — voir historique de commits (`React.lazy` par route, 1,36 Mo → 315 Ko de chunk partagé)
 - ~~Accessibilité : audit systématique~~ ✅ fait (axe-core, 9 violations réelles → 0)
-- Onboarding minimal pour un nouveau visiteur (favoris/itinéraire/signalement/planification expliqués en un coup d'œil) — **toujours en attente**
+- ~~Onboarding minimal pour un nouveau visiteur (favoris/itinéraire/signalement/planification expliqués en un coup d'œil)~~ ✅ **fait et committé** par une session peer (commits `f49bdea`, `1d95e69`, `0a0655a`) — bannière dismissible unique `OnboardingBanner` dans `HomePage`, état "vu" mémorisé en localStorage (`gbakamap.onboarding.dismissed`), volontairement pas un tunnel à onglets. Re-vérifié par la session actuelle le 2026-09-08 : suite vitest frontend 91/91 verte + `tsc --noEmit` propre.
 - Étendre le planificateur : correspondances via une marche courte entre deux arrêts proches de lignes différentes (aujourd'hui limité au même arrêt physique, §12.7) ; utiliser l'API Matrix ORS (§12.6) pour accélérer le filtrage des candidats — **toujours en attente**
 
 ### 🔵 Gros chantiers identifiés, pas encore conçus (voir §12.8)
