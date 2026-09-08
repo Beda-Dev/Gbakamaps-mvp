@@ -202,16 +202,61 @@ function circlePolygon(center: { lat: number; lon: number }, radiusMeters: numbe
 // Source/couche du tracé d'itinéraire (ids réservés à cet usage).
 const ROUTE_SOURCE_ID = 'route';
 const ROUTE_LAYER_ID = 'route-line';
-// Source/couche des segments du plan de trajet multi-modal (distincte du
+// Source/couches des segments du plan de trajet multi-modal (distinctes du
 // tracé point-à-point ci-dessus — les deux ne sont jamais actifs ensemble
 // dans l'usage réel de l'app, mais gardés séparés pour rester explicites).
+// Trois couches plutôt qu'une (demande explicite : "les tracet doivent être
+// bien visible, original, animé... colorié dynamiquement") :
+//   - un halo sombre commun (visibilité sur n'importe quel fond de carte,
+//     clair ou satellite — `line-dasharray` n'est PAS data-driven dans le
+//     style spec MapLibre, d'où la séparation par couche plutôt qu'une
+//     seule couche avec une expression `match`)
+//   - la marche : fine, grise, pointillée statique, volontairement discrète
+//   - le trajet en véhicule : couleur RÉELLE de la ligne empruntée
+//     (`TransportLine.color`, donc dynamique d'une ligne à l'autre — jamais
+//     une couleur inventée), tireté ANIMÉ (voir startTripSegmentsAnimation)
+//     pour suggérer visuellement le sens du déplacement.
 const TRIP_SEGMENTS_SOURCE_ID = 'trip-segments';
-const TRIP_SEGMENTS_LAYER_ID = 'trip-segments-line';
+const TRIP_SEGMENTS_CASING_LAYER_ID = 'trip-segments-casing';
+const TRIP_SEGMENTS_WALK_LAYER_ID = 'trip-segments-walk';
+const TRIP_SEGMENTS_RIDE_LAYER_ID = 'trip-segments-ride';
+// Surcouche animée (tireté clair) au-dessus de la base solide ci-dessus —
+// jamais seule responsable de la couleur/visibilité du trajet en véhicule.
+const TRIP_SEGMENTS_RIDE_ANIM_LAYER_ID = 'trip-segments-ride-anim';
+const TRIP_SEGMENTS_LAYER_IDS = [
+  TRIP_SEGMENTS_RIDE_ANIM_LAYER_ID,
+  TRIP_SEGMENTS_RIDE_LAYER_ID,
+  TRIP_SEGMENTS_WALK_LAYER_ID,
+  TRIP_SEGMENTS_CASING_LAYER_ID,
+] as const;
+
+// Séquence de motifs de tireté jouée en boucle sur la couche "ride" —
+// technique standard MapLibre/Mapbox pour simuler un déplacement continu
+// le long d'une ligne (chaque motif décale le tiret suivant, donnant
+// l'illusion de "fourmis en marche" dans le sens du tracé).
+const RIDE_DASH_SEQUENCE: number[][] = [
+  [0, 4, 3],
+  [0.5, 4, 2.5],
+  [1, 4, 2],
+  [1.5, 4, 1.5],
+  [2, 4, 1],
+  [2.5, 4, 0.5],
+  [3, 4, 0],
+  [0, 0.5, 3, 3.5],
+  [0, 1, 3, 3],
+  [0, 1.5, 3, 2.5],
+  [0, 2, 3, 2],
+  [0, 2.5, 3, 1.5],
+  [0, 3, 3, 1],
+  [0, 3.5, 3, 0.5],
+];
 
 function upsertTripSegmentsLayer(map: Map, segments: TripSegment[] | null): void {
   const existing = map.getSource(TRIP_SEGMENTS_SOURCE_ID);
   if (!segments || segments.length === 0) {
-    if (map.getLayer(TRIP_SEGMENTS_LAYER_ID)) map.removeLayer(TRIP_SEGMENTS_LAYER_ID);
+    for (const id of TRIP_SEGMENTS_LAYER_IDS) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
     if (existing) map.removeSource(TRIP_SEGMENTS_SOURCE_ID);
     return;
   }
@@ -219,7 +264,9 @@ function upsertTripSegmentsLayer(map: Map, segments: TripSegment[] | null): void
     type: 'FeatureCollection' as const,
     features: segments.map((seg) => ({
       type: 'Feature' as const,
-      properties: { kind: seg.kind, color: seg.color ?? '#0A9396' },
+      // La marche reste grise quelle que soit `seg.color` — seul le trajet
+      // en véhicule affiche la couleur réelle de sa ligne.
+      properties: { kind: seg.kind, color: seg.kind === 'ride' ? (seg.color ?? '#0A9396') : '#5C6B73' },
       geometry: { type: 'LineString' as const, coordinates: seg.coordinates },
     })),
   };
@@ -227,24 +274,104 @@ function upsertTripSegmentsLayer(map: Map, segments: TripSegment[] | null): void
     (existing as GeoJSONSource).setData(data);
     return;
   }
-  if (map.getLayer(TRIP_SEGMENTS_LAYER_ID)) map.removeLayer(TRIP_SEGMENTS_LAYER_ID);
+  for (const id of TRIP_SEGMENTS_LAYER_IDS) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
   if (existing) map.removeSource(TRIP_SEGMENTS_SOURCE_ID);
   map.addSource(TRIP_SEGMENTS_SOURCE_ID, { type: 'geojson', data });
   const firstSymbolLayer = map.getStyle().layers?.find((l) => l.type === 'symbol');
+
   map.addLayer(
     {
-      id: TRIP_SEGMENTS_LAYER_ID,
+      id: TRIP_SEGMENTS_CASING_LAYER_ID,
       type: 'line',
       source: TRIP_SEGMENTS_SOURCE_ID,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': ['get', 'color'],
-        'line-width': ['match', ['get', 'kind'], 'walk', 3, 5],
-        'line-dasharray': ['match', ['get', 'kind'], 'walk', ['literal', [2, 2]], ['literal', [1, 0]]],
+        'line-color': '#0B1D26',
+        'line-width': ['match', ['get', 'kind'], 'walk', 5, 9],
+        'line-opacity': 0.35,
       },
     },
     firstSymbolLayer?.id,
   );
+  map.addLayer(
+    {
+      id: TRIP_SEGMENTS_WALK_LAYER_ID,
+      type: 'line',
+      source: TRIP_SEGMENTS_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'walk'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-dasharray': ['literal', [2, 2]] },
+    },
+    firstSymbolLayer?.id,
+  );
+  // Base SOLIDE (pas de tireté) — garantit que la couleur réelle de la ligne
+  // reste visible en permanence, quel que soit l'instant où l'œil (ou une
+  // capture d'écran) regarde la carte. Vérifié en navigateur réel le
+  // 2026-09-08 : sans cette base, la couche animée seule (tiretée) devient
+  // presque invisible aux phases du cycle où le motif est surtout du "vide"
+  // — l'utilisateur ne verrait plus qu'un simple halo sombre à ces
+  // instants, contraire à la demande explicite "bien visible".
+  map.addLayer(
+    {
+      id: TRIP_SEGMENTS_RIDE_LAYER_ID,
+      type: 'line',
+      source: TRIP_SEGMENTS_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'ride'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-width': 6 },
+    },
+    firstSymbolLayer?.id,
+  );
+  // Surcouche animée fine et claire, PAR-DESSUS la base solide : suggère un
+  // déplacement continu (façon "fourmis en marche") sans jamais faire
+  // disparaître la couleur réelle de la ligne en dessous.
+  map.addLayer(
+    {
+      id: TRIP_SEGMENTS_RIDE_ANIM_LAYER_ID,
+      type: 'line',
+      source: TRIP_SEGMENTS_SOURCE_ID,
+      filter: ['==', ['get', 'kind'], 'ride'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#FFFFFF',
+        'line-width': 2.5,
+        'line-opacity': 0.9,
+        'line-dasharray': ['literal', RIDE_DASH_SEQUENCE[0]],
+      },
+    },
+    firstSymbolLayer?.id,
+  );
+}
+
+// Anime le tireté de la couche "ride" pour suggérer un déplacement continu
+// le long du trajet. Retourne une fonction d'arrêt, à appeler
+// IMPÉRATIVEMENT (changement de segments, changement de style, démontage du
+// composant) pour ne jamais laisser une boucle requestAnimationFrame tourner
+// sur une couche qui n'existe plus (fuite, erreurs console silencieuses).
+function startTripSegmentsAnimation(map: Map): () => void {
+  let frameId = 0;
+  let step = -1;
+  let cancelled = false;
+
+  function animate(timestamp: number) {
+    if (cancelled) return;
+    const newStep = Math.floor((timestamp / 60) % RIDE_DASH_SEQUENCE.length);
+    if (newStep !== step) {
+      step = newStep;
+      if (map.getLayer(TRIP_SEGMENTS_RIDE_ANIM_LAYER_ID)) {
+        map.setPaintProperty(TRIP_SEGMENTS_RIDE_ANIM_LAYER_ID, 'line-dasharray', RIDE_DASH_SEQUENCE[step]);
+      }
+    }
+    frameId = requestAnimationFrame(animate);
+  }
+
+  frameId = requestAnimationFrame(animate);
+  return () => {
+    cancelled = true;
+    cancelAnimationFrame(frameId);
+  };
 }
 
 // Arrêts affichés via une source GeoJSON groupée (clustering natif MapLibre/
@@ -631,6 +758,9 @@ export function StopsMap({
   const originMarkerRef = useRef<Marker | null>(null);
   const destinationMarkerRef = useRef<Marker | null>(null);
   const tripSegmentsRef = useRef<TripSegment[] | null>(null);
+  // Fonction d'arrêt de la boucle d'animation du tireté "ride" en cours, le
+  // cas échéant — voir startTripSegmentsAnimation/restartTripAnimation.
+  const tripAnimationCancelRef = useRef<(() => void) | null>(null);
   const radiusCircleRef = useRef<number | null>(null);
   const neighborhoodsRef = useRef<{ name: string; lat: number; lon: number }[] | null>(null);
   const communesRef = useRef<{ name: string; polygon: [number, number][][] }[] | null>(null);
@@ -693,6 +823,12 @@ export function StopsMap({
       if (geometry) upsertRouteLayer(map, geometry);
       const segments = tripSegmentsRef.current;
       if (segments) upsertTripSegmentsLayer(map, segments);
+      // setStyle() a détruit la couche animée précédente : on redémarre
+      // l'animation sur la couche fraîchement recréée, sinon le tracé
+      // redevient statique après un changement de style de carte.
+      tripAnimationCancelRef.current?.();
+      tripAnimationCancelRef.current =
+        segments?.some((s) => s.kind === 'ride') ? startTripSegmentsAnimation(map) : null;
       upsertStopsSource(map, stopsRef.current);
       upsertReachableStopsLayer(map, reachableStopsRef.current, reachableBudgetRef.current);
       if (radiusCircleRef.current) upsertRadiusCircleLayer(map, center, radiusCircleRef.current);
@@ -871,6 +1007,9 @@ export function StopsMap({
     const segments = tripSegments ?? null;
     tripSegmentsRef.current = segments;
     upsertTripSegmentsLayer(map, segments);
+    tripAnimationCancelRef.current?.();
+    tripAnimationCancelRef.current =
+      segments?.some((s) => s.kind === 'ride') ? startTripSegmentsAnimation(map) : null;
     if (segments && segments.length > 0) {
       const bounds = segments.reduce(
         (b, seg) => seg.coordinates.reduce((bb, [lon, lat]) => bb.extend([lon, lat]), b),
@@ -878,6 +1017,10 @@ export function StopsMap({
       );
       map.fitBounds(bounds, { padding: 60 });
     }
+    return () => {
+      tripAnimationCancelRef.current?.();
+      tripAnimationCancelRef.current = null;
+    };
   }, [tripSegments, mapReady]);
 
   // Bascule de style : les Markers sont des éléments DOM indépendants des

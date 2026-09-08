@@ -459,7 +459,20 @@ export async function planTrip(params: PlanTripParams): Promise<{ plans: TripPla
       "Estimations : temps de marche basé sur une vitesse standard (pas mesuré à Abidjan), " +
       'temps de trajet basé sur les horaires GTFS 2021 quand disponibles (sinon estimation par distance). ' +
       "Coût : tarif par ligne — indicatif (costVerified=false) tant qu'aucun administrateur ne l'a confirmé, " +
-      'fiable une fois vérifié (costVerified=true). Correspondances limitées à un changement au même arrêt physique.',
+      'fiable une fois vérifié (costVerified=true). Correspondances limitées à un changement au même arrêt physique. ' +
+      // Ajouté le 2026-09-08 suite à une remarque directe de l'utilisateur
+      // ("tu ne prend pas en compte les temps d'attente, les embouteillage,
+      // les frequance des bus et gbaka") — limite réelle et déjà vraie dans
+      // le code (TRANSFER_WAIT_SECONDS = 0, aucune donnée de fréquence
+      // gbaka/woro-woro n'existe, §4 ; le routage ORS/GraphHopper utilisé
+      // n'intègre pas de trafic en temps réel) mais jusqu'ici seulement
+      // documentée en commentaire de code et dans la note de /isochrone —
+      // jamais affichée ICI, dans le planificateur principal. Corrigé pour
+      // ne jamais laisser croire que ces durées sont plus précises qu'elles
+      // ne le sont : elles sont donc plutôt optimistes.
+      "Non pris en compte (durées donc plutôt optimistes) : temps d'attente à l'arrêt avant de " +
+      'monter, embouteillages (le trafic réel varie fortement selon l\'heure à Abidjan), et ' +
+      'fréquence de passage réelle des bus/gbaka/woro-woro (aucune donnée fiable disponible sur ce point).',
   };
 }
 
