@@ -70,6 +70,38 @@ curl http://localhost:4000/api/health
 
 `docker compose down` arrête les conteneurs **sans perdre les données** (volume nommé `gbakamap_db_data`). Pour tout réinitialiser : `docker compose down -v`.
 
+### ⚠️ Les imports de données ne sont PAS automatiques
+
+Ni au build de l'image, ni au démarrage du conteneur : `CMD` ne lance que le
+serveur HTTP (`dist/server.js`). C'est voulu — un import de données n'a pas
+sa place sur le chemin de démarrage d'un serveur de requêtes (les mêmes
+scripts servent aussi en local, hors Docker, où un démarrage silencieux qui
+réimporterait 3 820 arrêts à chaque redémarrage serait surprenant). Sur un
+**premier déploiement sur un serveur réel**, après `docker compose up -d --build`,
+il faut lancer manuellement, une fois (idempotent, sans risque de doublon à
+relancer) :
+
+```bash
+docker compose exec backend node dist/scripts/import-gtfs.js
+docker compose exec backend node dist/scripts/import-line-shapes.js
+docker compose exec backend node dist/scripts/import-sotra-stops.js
+```
+
+- `import-gtfs.js` lit les fichiers CSV embarqués dans l'image
+  (`backend/data/gtfs-abidjan/`, voir son propre README) — arrêts et lignes
+  de base.
+- `import-line-shapes.js` et `import-sotra-stops.js` interrogent
+  **data.gouv.ci en direct** (aucun fichier local requis) — tracés réels de
+  lignes et comblement des arrêts SOTRA officiels manquants. Peuvent être
+  relancés à tout moment pour rafraîchir ces deux jeux de données sans
+  risque (upsert par ID exact, jamais de doublon).
+
+Vérifié réellement le 2026-09-08 en reconstruisant l'image et en exécutant
+les trois commandes ci-dessus contre un conteneur "à froid" — voir
+`PROJECT_MEMORY.md` §12.19/§12.20 pour le détail (le `Dockerfile` ne
+copiait pas `data/` avant cette date, ce qui aurait fait échouer
+`import-gtfs.js` en production).
+
 ## Tests
 
 ```bash

@@ -3,3 +3,6 @@ dist
 src/generated
 .env
 *.log
+# Référence locale (9,6 Mo) jamais lue par le code — import-line-shapes.js
+# interroge data.gouv.ci en direct. Pas la peine d'alourdir l'image.
+data/abidjantransport-lignes/*.geojson

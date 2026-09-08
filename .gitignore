@@ -46,3 +46,11 @@ frontend/playwright-report/
 # photos communautaires uploadées en dev local (hors Docker) — en conteneur,
 # ce dossier vit dans le volume nommé backend_uploads, jamais dans l'image.
 backend/uploads/
+
+# Export local du jeu de données data.gouv.ci "Lignes de transport à
+# Abidjan" (9,6 Mo) — fourni par l'utilisateur, conservé sur disque comme
+# référence (voir backend/data/abidjantransport-lignes/README.md), mais
+# import-line-shapes.ts interroge l'API en direct et ne dépend jamais de ce
+# fichier : pas la peine d'alourdir l'historique Git avec, contrairement à
+# gtfs-abidjan/ (10x plus petit et réellement lu par import-gtfs.ts).
+backend/data/abidjantransport-lignes/*.geojson

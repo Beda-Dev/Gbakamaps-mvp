@@ -13,7 +13,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "import:gtfs": "tsx src/scripts/import-gtfs.ts",
-    "import:line-shapes": "tsx src/scripts/import-line-shapes.ts"
+    "import:line-shapes": "tsx src/scripts/import-line-shapes.ts",
+    "import:sotra-stops": "tsx src/scripts/import-sotra-stops.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
