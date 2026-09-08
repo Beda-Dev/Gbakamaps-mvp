@@ -240,6 +240,127 @@ button:disabled {
   color: white;
 }
 
+/* --- Panneau "zone accessible en X min" (approximation §12.17/§12.18). ----
+   Superposé en BAS à gauche de la carte, juste au-dessus de la légende —
+   volontairement PAS en haut à gauche pour ne jamais recouvrir le sélecteur
+   de style de carte qui occupe déjà ce coin (leçon "chevauchement spatial,
+   pas course au z-index" §12.5). z-index 9 : sous la légende / le sélecteur
+   de style (10), c'est ce panneau temporaire qui cède si jamais ils se
+   touchent. Quand un arrêt est sélectionné, .home.has-detail remonte la
+   légende (bottom: 42%) : aucun conflit avec ce panneau en bas. */
+.home__isochrone-panel {
+  position: absolute;
+  bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  left: calc(0.5rem + env(safe-area-inset-left, 0px));
+  z-index: 9;
+  width: 15rem;
+  max-width: calc(100% - 1rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.8rem;
+  color: #444;
+}
+
+.home__isochrone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+}
+
+.home__isochrone-title {
+  font-weight: 700;
+  color: #6d28d9;
+}
+
+.home__isochrone-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.home__isochrone-close:hover {
+  background: #f2f2f2;
+}
+
+.home__isochrone-minutes {
+  display: flex;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.home__isochrone-min {
+  flex: 1;
+  padding: 0.3rem 0;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  color: #555;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.home__isochrone-min.is-active {
+  background: #6d28d9;
+  border-color: #6d28d9;
+  color: white;
+}
+
+.home__isochrone-hint,
+.home__isochrone-count,
+.home__isochrone-note,
+.home__isochrone-disclaimer {
+  margin: 0.3rem 0 0;
+}
+
+.home__isochrone-count {
+  font-weight: 600;
+  color: #6d28d9;
+}
+
+.home__isochrone-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.home__isochrone-hint--error {
+  color: #ae2012;
+}
+
+.home__isochrone-note {
+  color: #ae2012;
+}
+
+.home__isochrone-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #6d28d9;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.home__isochrone-disclaimer {
+  font-size: 0.72rem;
+  color: #777;
+  line-height: 1.35;
+  border-top: 1px solid #eee;
+  padding-top: 0.4rem;
+}
+
 /* --- Panneau détail : bottom-sheet mobile, transition slide + fade. -------- */
 .home__detail {
   position: absolute;

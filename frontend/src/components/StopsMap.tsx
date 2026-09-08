@@ -170,6 +170,14 @@ interface StopsMapProps {
   // mêmes bounds sont sélectionnées deux fois ; ici, l'objet est recréé à
   // chaque sélection donc une nouvelle référence suffit à déclencher l'effet.
   focusBounds?: { south: number; west: number; north: number; east: number } | null;
+  // Surlignage "zone accessible en X min" (approximation §12.17/§12.18) —
+  // null/undefined/[] = masqué. `reachableBudgetSeconds` sert uniquement à
+  // nuancer le halo (proche/moyen/limite), pas une donnée affichée.
+  reachableStops?: ReachableHighlight[] | null;
+  reachableBudgetSeconds?: number;
+  // Point de départ choisi pour la "zone accessible" — marqueur violet
+  // distinct des marqueurs origine/destination (vert/rouge) du planificateur.
+  isochroneOrigin?: MapPoint | null;
 }
 
 // Polygone approximatif d'un cercle réel (grand cercle terrestre, pas une
@@ -513,6 +521,87 @@ function upsertCommunesLayer(map: Map, communes: { name: string; polygon: [numbe
   );
 }
 
+// Surlignage "zone accessible en X minutes" (approximation, PROJECT_MEMORY.md
+// §12.17/§12.18) — ce ne sont PAS de nouveaux arrêts ni un polygone : juste
+// les arrêts DÉJÀ affichés qu'on met en évidence par un halo violet (couleur
+// hors de STOP_TYPE_COLORS, jamais confondue avec un type d'arrêt réel). Trois
+// nuances selon la part du budget de temps consommée pour y arriver — repère
+// visuel de "proche / moyen / limite", pas une donnée de précision. Le halo
+// est dessiné SOUS les arrêts et les groupes pour ne masquer aucun point réel.
+export interface ReachableHighlight {
+  stopId: string;
+  lat: number;
+  lon: number;
+  etaSeconds: number;
+}
+
+const REACHABLE_SOURCE_ID = 'reachable-stops';
+const REACHABLE_LAYER_ID = 'reachable-stops-halo';
+const REACHABLE_ORIGIN_COLOR = '#7C3AED';
+const REACHABLE_TIER_COLORS = ['#6D28D9', '#8B5CF6', '#C4B5FD'] as const;
+
+function reachableTier(etaSeconds: number, budgetSeconds: number): 0 | 1 | 2 {
+  if (budgetSeconds <= 0) return 1;
+  const frac = etaSeconds / budgetSeconds;
+  if (frac <= 0.4) return 0;
+  if (frac <= 0.7) return 1;
+  return 2;
+}
+
+function upsertReachableStopsLayer(
+  map: Map,
+  reachable: ReachableHighlight[] | null,
+  budgetSeconds: number
+): void {
+  const existing = map.getSource(REACHABLE_SOURCE_ID);
+  if (!reachable || reachable.length === 0) {
+    if (map.getLayer(REACHABLE_LAYER_ID)) map.removeLayer(REACHABLE_LAYER_ID);
+    if (existing) map.removeSource(REACHABLE_SOURCE_ID);
+    return;
+  }
+  const data = {
+    type: 'FeatureCollection' as const,
+    features: reachable.map((r) => ({
+      type: 'Feature' as const,
+      properties: { tier: reachableTier(r.etaSeconds, budgetSeconds) },
+      geometry: { type: 'Point' as const, coordinates: [r.lon, r.lat] },
+    })),
+  };
+  if (existing && existing.type === 'geojson') {
+    (existing as GeoJSONSource).setData(data);
+    return;
+  }
+  map.addSource(REACHABLE_SOURCE_ID, { type: 'geojson', data });
+  // Ancré sous la couche des groupes d'arrêts quand elle existe (donc sous les
+  // points isolés aussi), sinon sous la première couche de symboles.
+  const beneath = map.getLayer(STOPS_CLUSTER_LAYER_ID)
+    ? STOPS_CLUSTER_LAYER_ID
+    : map.getStyle().layers?.find((l) => l.type === 'symbol')?.id;
+  map.addLayer(
+    {
+      id: REACHABLE_LAYER_ID,
+      type: 'circle',
+      source: REACHABLE_SOURCE_ID,
+      paint: {
+        'circle-color': [
+          'match',
+          ['get', 'tier'],
+          0, REACHABLE_TIER_COLORS[0],
+          1, REACHABLE_TIER_COLORS[1],
+          2, REACHABLE_TIER_COLORS[2],
+          REACHABLE_TIER_COLORS[1],
+        ],
+        'circle-radius': 13,
+        'circle-opacity': 0.4,
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': REACHABLE_ORIGIN_COLOR,
+        'circle-stroke-opacity': 0.55,
+      },
+    },
+    beneath
+  );
+}
+
 export function StopsMap({
   center,
   stops,
@@ -531,6 +620,9 @@ export function StopsMap({
   neighborhoods,
   communes,
   focusBounds,
+  reachableStops,
+  reachableBudgetSeconds,
+  isochroneOrigin,
 }: StopsMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
@@ -542,6 +634,9 @@ export function StopsMap({
   const radiusCircleRef = useRef<number | null>(null);
   const neighborhoodsRef = useRef<{ name: string; lat: number; lon: number }[] | null>(null);
   const communesRef = useRef<{ name: string; polygon: [number, number][][] }[] | null>(null);
+  const reachableStopsRef = useRef<ReachableHighlight[] | null>(null);
+  const reachableBudgetRef = useRef<number>(0);
+  const isochroneOriginMarkerRef = useRef<Marker | null>(null);
   const stopsPopupRef = useRef<Popup | null>(null);
   // Table de correspondance id → arrêt complet, pour retrouver l'objet Stop
   // réel (nom, lignes…) au clic sur un point de la couche groupée (les
@@ -599,6 +694,7 @@ export function StopsMap({
       const segments = tripSegmentsRef.current;
       if (segments) upsertTripSegmentsLayer(map, segments);
       upsertStopsSource(map, stopsRef.current);
+      upsertReachableStopsLayer(map, reachableStopsRef.current, reachableBudgetRef.current);
       if (radiusCircleRef.current) upsertRadiusCircleLayer(map, center, radiusCircleRef.current);
       upsertNeighborhoodsLayer(map, neighborhoodsRef.current);
       upsertCommunesLayer(map, communesRef.current);
@@ -832,6 +928,37 @@ export function StopsMap({
     communesRef.current = list;
     upsertCommunesLayer(map, list);
   }, [communes, mapReady]);
+
+  // Surlignage "zone accessible" — halo violet sous les arrêts, redessiné en
+  // place à chaque nouveau résultat (nouveau point ou nouveau budget de
+  // temps), retiré nettement quand la liste repasse à null/vide.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const list = reachableStops ?? null;
+    const budget = reachableBudgetSeconds ?? 0;
+    reachableStopsRef.current = list;
+    reachableBudgetRef.current = budget;
+    upsertReachableStopsLayer(map, list, budget);
+  }, [reachableStops, reachableBudgetSeconds, mapReady]);
+
+  // Marqueur du point de départ choisi pour la "zone accessible" — violet,
+  // distinct des marqueurs vert/rouge du planificateur (couleurs réservées).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    isochroneOriginMarkerRef.current?.remove();
+    isochroneOriginMarkerRef.current = isochroneOrigin
+      ? new Marker({ color: REACHABLE_ORIGIN_COLOR })
+          .setLngLat([isochroneOrigin.lon, isochroneOrigin.lat])
+          .setPopup(new Popup({ offset: 12 }).setText(isochroneOrigin.label))
+          .addTo(map)
+      : null;
+    return () => {
+      isochroneOriginMarkerRef.current?.remove();
+      isochroneOriginMarkerRef.current = null;
+    };
+  }, [isochroneOrigin, mapReady]);
 
   // Cadrage sur une zone (sélection d'une commune via recherche) — un objet
   // fraîchement créé à chaque sélection suffit à redéclencher l'effet même

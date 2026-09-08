@@ -22,6 +22,11 @@ import { bearingBetween, cardinalLabel, useDeviceOrientation } from '@/hooks/use
 import { POI_CATEGORY_LABELS, useNearbyPois } from '@/hooks/useNearbyPois';
 import { useNeighborhoods } from '@/hooks/useNeighborhoods';
 import { useCommunes, type Commune } from '@/hooks/useCommunes';
+import {
+  ISOCHRONE_MINUTES_OPTIONS,
+  useReachableStops,
+  type IsochroneMinutes,
+} from '@/hooks/useReachableStops';
 import { AuthStatus } from '@/components/AuthStatus';
 import { OnboardingBanner } from '@/components/OnboardingBanner';
 import { STOP_TYPE_LABELS, StopsMap } from '@/components/StopsMap';
@@ -29,6 +34,7 @@ import { StopSearchBar } from '@/components/StopSearchBar';
 import {
   BikeIcon,
   CarIcon,
+  CrosshairIcon,
   FlagIcon,
   FootprintsIcon,
   LoaderIcon,
@@ -646,6 +652,32 @@ export function HomePage() {
     setShowNeighborhoods(true); // révèle le contour choisi, pas une zone invisible
     setFocusBounds({ ...commune.bounds });
   }
+
+  // "Zone accessible en X min" — approximation (PROJECT_MEMORY.md §12.17/§12.18),
+  // PAS un vrai isochrone de rue. Masqué par défaut : activé par un bouton
+  // dédié, l'utilisateur clique ensuite un point sur la carte (ou part de sa
+  // position). Un seul appel réseau par (point, budget), mis en cache côté hook.
+  const [isochroneMode, setIsochroneMode] = useState(false);
+  const [isochronePoint, setIsochronePoint] = useState<GeoCenter | null>(null);
+  const [isochroneMinutes, setIsochroneMinutes] = useState<IsochroneMinutes>(30);
+  const isochrone = useReachableStops(
+    isochroneMode ? isochronePoint : null,
+    isochroneMinutes
+  );
+
+  function toggleIsochroneMode() {
+    setIsochroneMode((on) => {
+      if (on) setIsochronePoint(null); // désactiver efface le point et le halo
+      return !on;
+    });
+  }
+  // Clic sur la carte pendant le mode "zone accessible" : (re)définit le point
+  // de départ. Ne s'applique qu'au clic sur un fond de carte vide (StopsMap
+  // n'appelle onMapClick que si le clic n'a pas déjà sélectionné un arrêt).
+  const handleIsochronePick = useCallback((point: GeoCenter) => {
+    setIsochronePoint(point);
+  }, []);
+
   const stops = useNearbyStops(center.lat, center.lon, searchRadius);
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   // Points d'intérêt réels autour de l'arrêt actuellement sélectionné
@@ -797,7 +829,88 @@ export function HomePage() {
             communes={showNeighborhoods ? communes : null}
             focusBounds={focusBounds}
             headingDeg={headingDeg}
+            pickerActive={isochroneMode}
+            onMapClick={isochroneMode ? handleIsochronePick : undefined}
+            reachableStops={isochroneMode ? isochrone.reachableStops : null}
+            reachableBudgetSeconds={isochroneMinutes * 60}
+            isochroneOrigin={
+              isochroneMode && isochronePoint
+                ? { ...isochronePoint, label: `Zone accessible en ${isochroneMinutes} min` }
+                : null
+            }
           />
+        )}
+        {isochroneMode && (
+          <div className="home__isochrone-panel" role="group" aria-label="Zone accessible">
+            <div className="home__isochrone-head">
+              <span className="home__isochrone-title">Zone accessible</span>
+              <button
+                type="button"
+                className="home__isochrone-close"
+                onClick={toggleIsochroneMode}
+                aria-label="Désactiver la zone accessible"
+              >
+                <XIcon width={14} height={14} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="home__isochrone-minutes" role="group" aria-label="Budget de temps">
+              {ISOCHRONE_MINUTES_OPTIONS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`home__isochrone-min${m === isochroneMinutes ? ' is-active' : ''}`}
+                  onClick={() => setIsochroneMinutes(m)}
+                  aria-pressed={m === isochroneMinutes}
+                >
+                  {m} min
+                </button>
+              ))}
+            </div>
+            {!isochronePoint ? (
+              <p className="home__isochrone-hint">
+                Touchez un point sur la carte
+                {userLocation && (
+                  <>
+                    {' '}ou{' '}
+                    <button
+                      type="button"
+                      className="home__isochrone-link"
+                      onClick={() => setIsochronePoint(userLocation)}
+                    >
+                      partez de ma position
+                    </button>
+                  </>
+                )}
+                .
+              </p>
+            ) : isochrone.isLoading ? (
+              <p className="home__isochrone-hint" role="status">
+                <span className="spinner spinner--small" aria-hidden="true" /> Calcul en cours…
+              </p>
+            ) : isochrone.isError ? (
+              <p className="home__isochrone-hint home__isochrone-hint--error" role="alert">
+                Calcul indisponible. Réessayez plus tard.
+              </p>
+            ) : (
+              <>
+                <p className="home__isochrone-count" role="status">
+                  {isochrone.data?.stats.stopsReachable ?? 0} arrêt
+                  {(isochrone.data?.stats.stopsReachable ?? 0) > 1 ? 's' : ''} atteignable
+                  {(isochrone.data?.stats.stopsReachable ?? 0) > 1 ? 's' : ''}
+                </p>
+                {isochrone.data?.stats.truncated && (
+                  <p className="home__isochrone-note">
+                    Résultat partiel (zone trop vaste pour ce budget).
+                  </p>
+                )}
+              </>
+            )}
+            <p className="home__isochrone-disclaimer">
+              Estimation optimiste, sans temps d’attente aux correspondances. Approximation
+              basée sur les arrêts atteignables via les lignes connues — pas un vrai calcul
+              d’itinéraire de rue.
+            </p>
+          </div>
         )}
       </div>
 
@@ -915,6 +1028,16 @@ export function HomePage() {
           >
             <MapPinIcon width={16} height={16} aria-hidden="true" />
             <span className="sr-only">Afficher les quartiers sur la carte</span>
+          </button>
+          <button
+            type="button"
+            className={`home__radius-toggle${isochroneMode ? ' is-active' : ''}`}
+            onClick={toggleIsochroneMode}
+            aria-pressed={isochroneMode}
+            title="Zone accessible en X minutes (approximation)"
+          >
+            <CrosshairIcon width={16} height={16} aria-hidden="true" />
+            <span className="sr-only">Afficher la zone accessible en X minutes</span>
           </button>
         </p>
       )}
