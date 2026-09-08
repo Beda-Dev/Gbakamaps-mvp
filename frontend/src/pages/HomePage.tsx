@@ -23,6 +23,7 @@ import { POI_CATEGORY_LABELS, useNearbyPois } from '@/hooks/useNearbyPois';
 import { useNeighborhoods } from '@/hooks/useNeighborhoods';
 import { useCommunes, type Commune } from '@/hooks/useCommunes';
 import { AuthStatus } from '@/components/AuthStatus';
+import { OnboardingBanner } from '@/components/OnboardingBanner';
 import { STOP_TYPE_LABELS, StopsMap } from '@/components/StopsMap';
 import { StopSearchBar } from '@/components/StopSearchBar';
 import {
@@ -734,6 +735,9 @@ export function HomePage() {
       <nav className="home__topbar" aria-label="Navigation utilisateur">
         <AuthStatus />
       </nav>
+      {/* Onboarding minimal de première visite : une seule fois, mémorisé en
+          localStorage via OnboardingBanner (voir composant). */}
+      <OnboardingBanner />
       <header className="home__banner">
         {health.isLoading && <span>Connexion au serveur…</span>}
         {health.isError && (

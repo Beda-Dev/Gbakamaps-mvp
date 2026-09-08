@@ -773,6 +773,75 @@ button:disabled {
   background: #f0f0f0;
 }
 
+/* --- Bannière d'onboarding minimal (première visite, dismissible). ———----- */
+/* Encart informatif et compact : ne doit pas concurrencer la carte en hauteur.
+   Fond légèrement teinté pour se distinguer de la topbar blanche et du
+   bandeau de statut, sans être criard. L'état "déjà vu" vit en localStorage
+   (OnboardingBanner), cette règle n'est donc que cosmétique. */
+.onboarding {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #eef5f1;
+  border-bottom: 1px solid #d8e6de;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  align-items: center;
+}
+
+.onboarding__intro {
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding__title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.onboarding__text {
+  margin: 0.1rem 0 0;
+}
+
+.onboarding__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.onboarding__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.onboarding__item svg {
+  flex: none;
+  color: var(--color-primary);
+}
+
+.onboarding__dismiss {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  border-radius: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding__dismiss:hover {
+  background: #e2edf0;
+}
+
 /* --- Écrans d'authentification (mobile-first, mêmes tokens que le reste). - */
 .auth {
   min-height: 100%;
