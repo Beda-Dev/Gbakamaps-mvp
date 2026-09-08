@@ -5,7 +5,7 @@
 // fermée, la bannière ne réapparaît plus jamais sur ce navigateur.
 //
 // Les trois fonctions présentées existent réellement dans l'app (aucune
-// invention, cf. è§2 de PROJECT_MEMORY.md) : favori (étoile du panneau détail,
+// invention, cf. section 2 de PROJECT_MEMORY.md) : favori (étoile du panneau détail,
 // page /favorites), itinéraire (tracé dessiné sur la carte / planificateur),
 // signalement d'un problème sur un arrêt (drapeau du panneau détail).
 import { useState } from 'react';
