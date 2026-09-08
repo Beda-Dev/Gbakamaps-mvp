@@ -442,17 +442,17 @@ Ce fichier ne reproduit pas l'audit complet (trop long) — se référer à la c
 - ~~Chaîne de secours carte (MapTiler clé 1→clé 2→OSM)~~ ✅ fait (commit `97f6b3e`) — voir §12.5
 - ~~Recherche et filtres (mode de transport, ligne, rayon)~~ ✅ fait (commit `7df22b8`) — voir §12.7
 - ~~Planificateur de trajet multi-modal réel~~ ✅ fait (commits `95a5145`, `e9d49f3`) — voir §12.7. L'écart produit le plus important identifié en phase 2 est comblé : l'app utilise enfin ses lignes gbaka/woro-woro/bus pour calculer un itinéraire, pas seulement les afficher.
-- Code-splitting du bundle frontend (MapLibre en chargement différé) si le bundle continue de grossir (~1,36 Mo actuellement)
-- Accessibilité : audit systématique (contrastes, navigation clavier, lecteurs d'écran) — pas encore fait au-delà des `aria-label`/`role` ajoutés au fil de l'eau
-- Onboarding minimal pour un nouveau visiteur (favoris/itinéraire/signalement/planification expliqués en un coup d'œil)
-- Étendre le planificateur : correspondances via une marche courte entre deux arrêts proches de lignes différentes (aujourd'hui limité au même arrêt physique, §12.7) ; utiliser l'API Matrix ORS (§12.6) pour accélérer le filtrage des candidats
+- ~~Code-splitting du bundle frontend~~ ✅ fait — voir historique de commits (`React.lazy` par route, 1,36 Mo → 315 Ko de chunk partagé)
+- ~~Accessibilité : audit systématique~~ ✅ fait (axe-core, 9 violations réelles → 0)
+- Onboarding minimal pour un nouveau visiteur (favoris/itinéraire/signalement/planification expliqués en un coup d'œil) — **toujours en attente**
+- Étendre le planificateur : correspondances via une marche courte entre deux arrêts proches de lignes différentes (aujourd'hui limité au même arrêt physique, §12.7) ; utiliser l'API Matrix ORS (§12.6) pour accélérer le filtrage des candidats — **toujours en attente**
 
 ### 🔵 Gros chantiers identifiés, pas encore conçus (voir §12.8)
 - ~~Gestion CRUD admin des arrêts~~ ✅ **fait le 2026-09-08** (§12.15) — création/édition/suppression avec impact réel, déplacement par glisser-déposer simple ou multiple. **CRUD des lignes (au-delà du tarif) toujours en attente** — étape 2 du découpage initial, jamais reprise après la disparition de la session déléguée.
-- Boussole/orientation de l'appareil (`DeviceOrientationEvent`) pour enrichir "Suivre mon trajet"
-- Photos des arrêts (Mapillary ou tags OSM `image=`/`wikimedia_commons=` via Overpass) — pistes réelles, jamais testées empiriquement
-- Fonctionnalités IA (Gemini, si l'utilisateur fournit une clé) — pistes non spécifiées (description en langage naturel d'un itinéraire, aide à la modération)
-- Recherche de lieux nommés quelconques via Overpass (pas seulement arrêts/lignes connus) pour la destination libre du planificateur
+- Boussole/orientation de l'appareil (`DeviceOrientationEvent`) pour enrichir "Suivre mon trajet" — **en attente**
+- Photos des arrêts (Mapillary ou tags OSM `image=`/`wikimedia_commons=` via Overpass) — pistes réelles, jamais testées empiriquement — **en attente**
+- Fonctionnalités IA (Gemini, si l'utilisateur fournit une clé) — pistes non spécifiées (description en langage naturel d'un itinéraire, aide à la modération) — **en attente, aucune clé fournie**
+- ~~Recherche de lieux nommés quelconques via Overpass~~ ✅ fait (§12.7bis) + ~~POI à proximité~~ ✅ + ~~quartiers/communes~~ ✅ (§12.13/§12.14)
 
 ### 🟢 Priorité faible
 - WebSocket/realtime pour la modération (design esquissé en §4, non implémenté)
@@ -604,8 +604,8 @@ Notées explicitement à la demande de l'utilisateur ("tu fais vraiment les note
 - **Gestion CRUD admin** (demande explicite, confirmée deux fois par l'utilisateur, "je le veux aussi, garde ça en tête") : arrêts ✅ **fait le 2026-09-08** (§12.15, backend + écran + glisser-déposer). **Lignes (au-delà du tarif) toujours en attente** — étape 2 du découpage initial jamais reprise.
 - **Boussole / orientation de l'appareil** (`DeviceOrientationEvent`) pour "Suivre mon trajet" — ferait pivoter la carte selon le cap réel du téléphone, ou afficherait une flèche vers le prochain arrêt. Techniquement faisable, contraintes réelles connues (HTTPS requis, permission explicite requise sur iOS 13+ via clic utilisateur). **Toujours en attente.**
 - **Photos des arrêts** — Mapillary (couverture réelle à Abidjan incertaine) ou tags OSM `image=`/`wikimedia_commons=` via Overpass (rares sur de simples arrêts). **Toujours en attente**, jamais testé empiriquement.
-- **Points d'intérêt à proximité d'un arrêt** (pharmacie, marché, école — via Overpass, même mécanisme que la recherche de lieux §12.7bis) pour enrichir le panneau détail d'un arrêt. Idée confirmée par l'utilisateur le 2026-09-06 ("ok ajoute ça dans tes plans"). **Nouveau, en attente.**
-- **Limites de quartiers sur la carte** (tags OSM `place=suburb`, ex. Adjamé/Cocody/Yopougon/Plateau — déjà vus réellement dans les tests Overpass du 2026-09-06) pour étiqueter les zones. Confirmé par l'utilisateur le même jour. **Nouveau, en attente.**
+- ~~Points d'intérêt à proximité d'un arrêt~~ ✅ **fait** (§12.13, section "Aux alentours" du panneau détail).
+- ~~Limites de quartiers sur la carte~~ ✅ **fait** (§12.13 étiquettes + §12.14 vrais contours de commune).
 - **Fonctionnalités IA (Gemini)** — l'utilisateur a proposé d'ajouter une clé API Gemini si une fonctionnalité IA s'avérait utile (description en langage naturel d'un itinéraire, aide à la modération). Aucune décision prise. **Toujours en attente.**
 - ~~Recherche de lieux quelconques via Overpass~~ ✅ **fait** le 2026-09-06 (commit `36d6032` backend, `a764591` frontend) — voir §12.7bis.
 
