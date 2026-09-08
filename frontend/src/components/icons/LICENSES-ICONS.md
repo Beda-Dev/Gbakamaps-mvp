@@ -1,6 +1,6 @@
 # Licences des icônes
 
-Les icônes de `index.tsx` (`LocateFixedIcon`, `XIcon`, `LoaderIcon`, `EyeIcon`, `EyeOffIcon`, `StarIcon`, `RouteIcon`, `CarIcon`, `BikeIcon`, `FootprintsIcon`, `FlagIcon`, `NavigationIcon`, `SearchIcon`, `BusIcon`, `CarTaxiFrontIcon`, `MapPinIcon`, `CrosshairIcon`, `TargetIcon`) sont copiées depuis [Lucide](https://lucide.dev/icons/) (fichiers `locate-fixed.svg`, `x.svg`, `loader-circle.svg`, `eye.svg`, `eye-off.svg`, `star.svg`, `route.svg`, `car.svg`, `bike.svg`, `footprints.svg`, `flag.svg`, `navigation.svg`, `search.svg`, `bus.svg`, `car-taxi-front.svg`, `map-pin.svg`, `crosshair.svg`, `target.svg`).
+Les icônes de `index.tsx` (`LocateFixedIcon`, `XIcon`, `LoaderIcon`, `EyeIcon`, `EyeOffIcon`, `StarIcon`, `RouteIcon`, `CarIcon`, `BikeIcon`, `FootprintsIcon`, `FlagIcon`, `NavigationIcon`, `SearchIcon`, `BusIcon`, `CarTaxiFrontIcon`, `MapPinIcon`, `CrosshairIcon`, `TargetIcon`, `PlusIcon`) sont copiées depuis [Lucide](https://lucide.dev/icons/) (fichiers `locate-fixed.svg`, `x.svg`, `loader-circle.svg`, `eye.svg`, `eye-off.svg`, `star.svg`, `route.svg`, `car.svg`, `bike.svg`, `footprints.svg`, `flag.svg`, `navigation.svg`, `search.svg`, `bus.svg`, `car-taxi-front.svg`, `map-pin.svg`, `crosshair.svg`, `target.svg`, `plus.svg`).
 
 - **Lucide** — Licence ISC. Copyright (c) Lucide Contributors.
 - Icônes dérivées du projet **Feather** — Licence MIT. Copyright (c) Cole Bemis.

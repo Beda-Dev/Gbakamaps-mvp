@@ -41,9 +41,14 @@ export function AuthStatus() {
         Signalements
       </Link>
       {user.role === 'ADMIN' && (
-        <Link className="auth-status__link" to="/admin/reports">
-          Modération
-        </Link>
+        <>
+          <Link className="auth-status__link" to="/admin/reports">
+            Modération
+          </Link>
+          <Link className="auth-status__link" to="/admin/stops">
+            Arrêts
+          </Link>
+        </>
       )}
       <span className="auth-status__name" title={user.email}>
         {user.displayName ?? user.email}

@@ -246,3 +246,14 @@ export function TargetIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// Icône "ajouter" (CRUD admin des arrêts), copiée depuis
+// https://lucide.dev/icons/plus, même licence ISC (voir LICENSES-ICONS.md).
+export function PlusIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaultProps} {...props}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
+  );
+}

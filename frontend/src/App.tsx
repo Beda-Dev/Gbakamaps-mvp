@@ -18,6 +18,9 @@ const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ defa
 const AdminReportsPage = lazy(() =>
   import('@/pages/AdminReportsPage').then((m) => ({ default: m.AdminReportsPage }))
 );
+const AdminStopsPage = lazy(() =>
+  import('@/pages/AdminStopsPage').then((m) => ({ default: m.AdminStopsPage }))
+);
 const TripPlannerPage = lazy(() =>
   import('@/pages/TripPlannerPage').then((m) => ({ default: m.TripPlannerPage }))
 );
@@ -48,6 +51,7 @@ const router = createBrowserRouter([
   { path: '/favorites', element: withSuspense(<FavoritesPage />) },
   { path: '/reports', element: withSuspense(<ReportsPage />) },
   { path: '/admin/reports', element: withSuspense(<AdminReportsPage />) },
+  { path: '/admin/stops', element: withSuspense(<AdminStopsPage />) },
   { path: '/planifier', element: withSuspense(<TripPlannerPage />) },
 ]);
 

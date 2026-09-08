@@ -2257,3 +2257,255 @@ textarea.home__report-input {
   color: var(--color-primary);
   background: var(--color-bg);
 }
+
+/* --- Administration des arrêts (CRUD + glisser-déposer, §12.15). ---------- */
+.admin-stops {
+  display: flex;
+  height: 100vh;
+}
+
+.admin-stops__forbidden {
+  margin: auto;
+  text-align: center;
+  padding: 2rem;
+}
+
+.admin-stops__sidebar {
+  width: 22rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  overflow-y: auto;
+  border-right: 1px solid #eee;
+  background: white;
+}
+
+@media (max-width: 720px) {
+  .admin-stops {
+    flex-direction: column;
+    height: auto;
+  }
+  .admin-stops__sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #eee;
+  }
+  .admin-stops__map {
+    height: 60vh;
+  }
+}
+
+.admin-stops__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-stops__header h1 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.admin-stops__header a {
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.admin-stops__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.admin-stops__controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-stops__add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  background: white;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-stops__add-btn.is-active {
+  background: var(--color-primary);
+  color: white;
+}
+
+.admin-stops__hint {
+  font-size: 0.8rem;
+  color: var(--color-primary);
+  margin: 0;
+}
+
+.admin-stops__error {
+  font-size: 0.85rem;
+  color: #b00020;
+  margin: 0;
+}
+
+.admin-stops__status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0;
+}
+
+.admin-stops__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.admin-stops__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+
+.admin-stops__item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-stops__item-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-stops__item-type {
+  font-size: 0.72rem;
+  color: #6b6b6b;
+}
+
+.admin-stops__item button {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  white-space: nowrap;
+}
+
+.admin-stops__delete-btn {
+  color: #b00020 !important;
+  display: inline-flex;
+}
+
+.admin-stops__map {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Halo de sélection sur un marqueur MapLibre déplaçable (AdminStopsMap). */
+.admin-stop-marker--selected .maplibregl-marker-anchor-center,
+.admin-stop-marker--selected svg {
+  filter: drop-shadow(0 0 0 3px #ffd60a) drop-shadow(0 0 6px #ffd60a);
+}
+
+.admin-stops__dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: 1rem;
+}
+
+.admin-stops__dialog {
+  background: white;
+  border-radius: 8px;
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 24rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-stops__dialog h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.admin-stops__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.admin-stops__field input,
+.admin-stops__field select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.admin-stops__impact {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.admin-stops__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.admin-stops__dialog-actions button {
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 1px solid #ddd;
+  background: white;
+}
+
+.admin-stops__dialog-actions button[type='submit'] {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.admin-stops__delete-confirm {
+  background: #b00020 !important;
+  color: white !important;
+  border-color: #b00020 !important;
+}
