@@ -90,7 +90,11 @@ interface CandidateStop extends StopPoint {
 // Arrêts servis par au moins une ligne, dans un rayon donné — condition
 // supplémentaire par rapport à /stops/nearby : un arrêt sans desserte connue
 // ne peut jamais être un point d'embarquement/débarquement valide.
-async function findBoardableStopsNear(point: Coordinates, radiusMeters: number): Promise<CandidateStop[]> {
+async function findBoardableStopsNear(
+  point: Coordinates,
+  radiusMeters: number,
+  limit = 20
+): Promise<CandidateStop[]> {
   const rows = await prisma.$queryRaw<
     { id: string; name: string | null; lat: number; lon: number; distance: number }[]
   >(Prisma.sql`
@@ -100,7 +104,7 @@ async function findBoardableStopsNear(point: Coordinates, radiusMeters: number):
     INNER JOIN "stop_lines" sl ON sl."stopId" = s."id"
     WHERE ST_DWithin(s."geog", ST_SetSRID(ST_MakePoint(${point.lon}, ${point.lat}), 4326)::geography, ${radiusMeters})
     ORDER BY distance ASC
-    LIMIT 20
+    LIMIT ${limit}
   `);
   return rows.map((r) => ({ id: r.id, name: r.name, lat: r.lat, lon: r.lon, walkDistanceMeters: r.distance }));
 }
@@ -505,4 +509,242 @@ ${stepsDescription}
 Rédige une explication naturelle de ce trajet, étape par étape, comme si tu parlais à quelqu'un qui ne connaît pas Abidjan. Mentionne si un tarif est indicatif (pas confirmé).`;
 
   return generateText(prompt);
+}
+
+// =============================================================================
+// Approximation de "zone accessible en X minutes" — PROJECT_MEMORY.md §12.17.
+//
+// CE N'EST PAS un vrai calcul isochrone réseau-routier : ni OpenRouteService
+// ni GraphHopper n'exposent leur API isochrone sur le plan gratuit du projet
+// (testé le 2026-09-08, §12.17). À la place, on parcourt NOTRE PROPRE graphe
+// de lignes GTFS (le même que planTrip) pour lister les arrêts réellement
+// atteignables dans un budget de temps donné, avec le temps réel pour y
+// arriver.
+//
+// Garde-fou (rappelé toute la session par le propriétaire du projet) : un
+// arrêt n'est inclus QUE s'il est atteignable par une chaîne de lignes
+// réelles — desserte StopLine avec lineId + direction + sequence cohérents,
+// embarquement toujours AVANT débarquement dans le sens de la ligne. Jamais
+// par simple proximité géographique. La SEULE proximité utilisée est
+// légitime : la marche de l'origine vers un premier arrêt embarquable
+// (exactement comme planTrip). Une correspondance = un changement de véhicule
+// AU MÊME arrêt physique (la marche courte entre deux arrêts proches de
+// lignes différentes est une autre amélioration, suivie séparément, §12.16).
+//
+// Limites assumées, à afficher comme telles côté client :
+//   - Le temps d'attente aux correspondances n'est PAS modélisé (aucune
+//     donnée de fréquence de passage des gbaka/woro-woro n'existe, §4). Les
+//     temps réels seront donc en pratique plus longs — l'approximation est
+//     OPTIMISTE. Cohérent avec planTrip, qui ne modélise pas non plus
+//     l'attente.
+//   - `maxRides` borne le nombre d'embarquements successifs explorés (défaut
+//     3 = jusqu'à 2 correspondances) : garde-fou de calcul ET choix cohérent
+//     avec planTrip ("1 correspondance couvre déjà la grande majorité des
+//     trajets urbains réels").
+//   - Le résultat est un ENSEMBLE D'ARRÊTS atteignables, pas un polygone
+//     lissé — volontairement, pour ne pas suggérer une précision de tracé de
+//     rue qu'on n'a pas.
+// =============================================================================
+
+// Aucune donnée de fréquence de passage → l'attente aux correspondances n'est
+// pas inventée. Documentée comme limite (l'approximation en devient optimiste).
+const TRANSFER_WAIT_SECONDS = 0;
+
+// Garde-fou de calcul : nombre max de couples (ligne, sens) dont on charge la
+// séquence complète d'arrêts. Un budget réaliste (≤ 90 min) à Abidjan en
+// touche largement moins en pratique ; au-delà on marque le résultat tronqué
+// plutôt que de laisser la requête s'emballer.
+const MAX_SEGMENT_FETCHES = 400;
+
+export interface ReachableStop {
+  stopId: string;
+  name: string | null;
+  lat: number;
+  lon: number;
+  etaSeconds: number;
+  // Nombre d'embarquements pour l'atteindre (0 = accessible à pied depuis
+  // l'origine, sans prendre aucune ligne).
+  rides: number;
+  // Dernière ligne empruntée pour l'atteindre (null si accessible à pied).
+  lastLine: LineRef | null;
+}
+
+export interface ReachableResult {
+  origin: Coordinates;
+  maxSeconds: number;
+  walkRadius: number;
+  maxRides: number;
+  reachable: ReachableStop[];
+  segmentsExplored: number;
+  truncated: boolean;
+  note: string;
+}
+
+export interface ComputeReachableParams {
+  from: Coordinates;
+  maxSeconds: number;
+  walkRadius: number;
+  maxRides: number;
+}
+
+// Parcours en largeur, niveau par niveau (un embarquement de plus par niveau),
+// avec relâchement du meilleur temps connu par arrêt. Les poids d'arête (temps
+// de trajet) varient, donc on itère jusqu'à `maxRides` niveaux plutôt qu'un
+// simple BFS par nombre de sauts — chaque arrêt garde le plus petit temps
+// d'arrivée trouvé, quel que soit le niveau qui l'a produit.
+export async function computeReachableStops(
+  params: ComputeReachableParams
+): Promise<ReachableResult> {
+  const { from, maxSeconds, walkRadius, maxRides } = params;
+
+  interface Arrival {
+    etaSeconds: number;
+    rides: number;
+    lastLine: LineRef | null;
+  }
+  const best = new Map<string, Arrival>();
+  const stopMeta = new Map<string, StopPoint>();
+
+  // Enregistre une arrivée à `stop` si elle améliore le meilleur temps connu
+  // et tient dans le budget. Renvoie true si c'est une amélioration (→ à
+  // ré-explorer au niveau suivant).
+  const consider = (
+    stop: StopPoint,
+    etaSeconds: number,
+    rides: number,
+    lastLine: LineRef | null
+  ): boolean => {
+    if (etaSeconds > maxSeconds) return false;
+    const prev = best.get(stop.id);
+    if (prev && prev.etaSeconds <= etaSeconds) return false;
+    best.set(stop.id, { etaSeconds, rides, lastLine });
+    stopMeta.set(stop.id, stop);
+    return true;
+  };
+
+  interface Frontier {
+    stopId: string;
+    etaSeconds: number;
+    lineKey: string | null; // (ligne, sens) par lequel on est arrivé, ou null (à pied)
+  }
+
+  // --- Niveau 0 : marche de l'origine vers les premiers arrêts embarquables. ---
+  const originStops = await findBoardableStopsNear(from, walkRadius, 40);
+  let frontier: Frontier[] = [];
+  for (const s of originStops) {
+    const walk = estimateWalk(s.walkDistanceMeters);
+    const point: StopPoint = { id: s.id, name: s.name, lat: s.lat, lon: s.lon };
+    if (consider(point, walk.durationSeconds, 0, null)) {
+      frontier.push({ stopId: s.id, etaSeconds: walk.durationSeconds, lineKey: null });
+    }
+  }
+
+  // --- Caches DB (bornés par le budget de temps + MAX_SEGMENT_FETCHES). ---
+  const dessertesByStop = new Map<string, StopLineEntry[]>();
+  const segmentByLineDir = new Map<string, StopLineEntry[]>();
+  let segmentFetches = 0;
+  let truncated = false;
+
+  const loadDessertes = async (stopIds: string[]) => {
+    const missing = stopIds.filter((id) => !dessertesByStop.has(id));
+    if (missing.length === 0) return;
+    for (const id of missing) dessertesByStop.set(id, []);
+    const entries = await fetchStopLines(missing);
+    for (const e of entries) dessertesByStop.get(e.stopId)!.push(e);
+  };
+
+  const loadSegment = async (lineId: string, direction: string): Promise<StopLineEntry[]> => {
+    const key = `${lineId}::${direction}`;
+    const cached = segmentByLineDir.get(key);
+    if (cached) return cached;
+    if (segmentFetches >= MAX_SEGMENT_FETCHES) {
+      truncated = true;
+      return [];
+    }
+    segmentFetches += 1;
+    const rows = await prisma.stopLine.findMany({
+      where: { lineId, direction },
+      include: {
+        stop: { select: { id: true, name: true, lat: true, lon: true } },
+        line: { select: LINE_SELECT },
+      },
+      orderBy: { sequence: 'asc' },
+    });
+    const seg: StopLineEntry[] = rows.map((r) => ({
+      stopId: r.stopId,
+      stop: r.stop,
+      lineId: r.lineId,
+      line: r.line,
+      direction: r.direction,
+      sequence: r.sequence,
+      secondsFromRouteStart: r.secondsFromRouteStart,
+    }));
+    segmentByLineDir.set(key, seg);
+    return seg;
+  };
+
+  // --- Niveaux 1..maxRides : un embarquement de plus à chaque niveau. ---
+  for (let ride = 1; ride <= maxRides && frontier.length > 0; ride += 1) {
+    await loadDessertes([...new Set(frontier.map((f) => f.stopId))]);
+    const nextFrontier: Frontier[] = [];
+
+    for (const state of frontier) {
+      if (state.etaSeconds > maxSeconds) continue;
+      const dessertes = dessertesByStop.get(state.stopId) ?? [];
+      for (const boardEntry of dessertes) {
+        if (boardEntry.sequence === null || boardEntry.direction === null) continue;
+        const lineKey = `${boardEntry.lineId}::${boardEntry.direction}`;
+        // Pénalité de correspondance seulement si on change réellement de
+        // véhicule (ligne+sens différents de celui déjà emprunté).
+        const wait =
+          state.lineKey !== null && lineKey !== state.lineKey ? TRANSFER_WAIT_SECONDS : 0;
+        const boardTime = state.etaSeconds + wait;
+        if (boardTime > maxSeconds) continue;
+
+        const segment = await loadSegment(boardEntry.lineId, boardEntry.direction);
+        for (const downstream of segment) {
+          if (downstream.sequence === null || downstream.sequence <= boardEntry.sequence) continue;
+          const { seconds: rideSeconds } = estimateRideSeconds(boardEntry, downstream);
+          const eta = boardTime + rideSeconds;
+          if (consider(downstream.stop, eta, ride, boardEntry.line)) {
+            nextFrontier.push({ stopId: downstream.stopId, etaSeconds: eta, lineKey });
+          }
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  const reachable: ReachableStop[] = [...best.entries()]
+    .map(([stopId, a]) => {
+      const meta = stopMeta.get(stopId)!;
+      return {
+        stopId,
+        name: meta.name,
+        lat: meta.lat,
+        lon: meta.lon,
+        etaSeconds: a.etaSeconds,
+        rides: a.rides,
+        lastLine: a.lastLine,
+      };
+    })
+    .sort((x, y) => x.etaSeconds - y.etaSeconds);
+
+  return {
+    origin: from,
+    maxSeconds,
+    walkRadius,
+    maxRides,
+    reachable,
+    segmentsExplored: segmentFetches,
+    truncated,
+    note:
+      'Approximation : arrêts atteignables via les lignes connues (graphe GTFS du projet), ' +
+      "PAS un vrai calcul isochrone de rue. Le temps d'attente aux correspondances n'est pas " +
+      'modélisé (aucune donnée de fréquence) — les temps réels sont donc plutôt plus longs. ' +
+      `Exploration limitée à ${maxRides} embarquement(s) successif(s).` +
+      (truncated
+        ? ' Résultat tronqué : trop de segments de lignes à explorer pour ce budget.'
+        : ''),
+  };
 }

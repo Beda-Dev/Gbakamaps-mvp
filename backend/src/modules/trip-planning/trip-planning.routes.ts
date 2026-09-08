@@ -4,8 +4,12 @@
 // =============================================================================
 import type { FastifyInstance } from 'fastify';
 import { isGeminiConfigured } from '../../common/gemini.js';
-import { narrateTripQuerySchema, tripPlanQuerySchema } from './trip-planning.schemas.js';
-import { narratePlan, planTrip } from './trip-planning.service.js';
+import {
+  isochroneQuerySchema,
+  narrateTripQuerySchema,
+  tripPlanQuerySchema,
+} from './trip-planning.schemas.js';
+import { computeReachableStops, narratePlan, planTrip } from './trip-planning.service.js';
 
 export async function tripPlanningRoutes(app: FastifyInstance) {
   app.get('/trip-plan', async (request, reply) => {
@@ -60,5 +64,39 @@ export async function tripPlanningRoutes(app: FastifyInstance) {
     }
     const narration = await narratePlan(plan);
     return reply.send({ success: true, data: { narration } });
+  });
+
+  // Approximation de "zone accessible en X minutes" — lecture seule, public.
+  // Ce N'EST PAS un vrai isochrone réseau-routier (voir computeReachableStops
+  // et PROJECT_MEMORY.md §12.17) : la réponse liste les arrêts atteignables
+  // via le graphe de lignes du projet, avec `approximation: true` et une note
+  // explicite pour que le client ne présente jamais ça comme un tracé exact.
+  app.get('/isochrone', async (request, reply) => {
+    const query = isochroneQuerySchema.parse(request.query);
+
+    const result = await computeReachableStops({
+      from: query.from,
+      maxSeconds: query.maxMinutes * 60,
+      walkRadius: query.walkRadius,
+      maxRides: query.maxRides,
+    });
+
+    return reply.send({
+      success: true,
+      data: {
+        origin: result.origin,
+        maxMinutes: query.maxMinutes,
+        walkRadius: result.walkRadius,
+        maxRides: result.maxRides,
+        approximation: true,
+        reachableStops: result.reachable,
+        stats: {
+          stopsReachable: result.reachable.length,
+          segmentsExplored: result.segmentsExplored,
+          truncated: result.truncated,
+        },
+        note: result.note,
+      },
+    });
   });
 }

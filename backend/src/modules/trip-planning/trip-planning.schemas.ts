@@ -51,6 +51,27 @@ export const narrateTripQuerySchema = tripPlanQuerySchema.extend({
 
 export type NarrateTripQuery = z.infer<typeof narrateTripQuerySchema>;
 
+// Approximation de "zone accessible en X minutes" (PROJECT_MEMORY.md §12.17) —
+// PAS un vrai isochrone réseau-routier (ORS/GraphHopper le refusent sur le
+// plan gratuit) : une énumération des arrêts atteignables via le graphe de
+// lignes du projet dans un budget de temps donné.
+export const isochroneQuerySchema = z.object({
+  from: coordinatePairSchema,
+  // Budget de temps. Bornes : en-dessous de 5 min l'approximation n'a guère de
+  // sens (à peine le temps de marcher jusqu'à un arrêt), au-dessus de 90 min
+  // la combinatoire explose sans gain pratique à l'échelle du Grand Abidjan.
+  maxMinutes: z.coerce.number().int().min(5).max(90).default(30),
+  // Rayon de marche accepté de l'origine vers un premier arrêt embarquable —
+  // mêmes bornes que tripPlanQuerySchema.
+  walkRadius: z.coerce.number().int().min(100).max(2000).default(800),
+  // Nombre d'embarquements successifs explorés (0 = arrêts accessibles à pied
+  // uniquement, 3 = jusqu'à 2 correspondances). Garde-fou de calcul autant que
+  // choix produit — cf. commentaire de computeReachableStops.
+  maxRides: z.coerce.number().int().min(0).max(4).default(3),
+});
+
+export type IsochroneQuery = z.infer<typeof isochroneQuerySchema>;
+
 export type TripPlanQuery = z.infer<typeof tripPlanQuerySchema>;
 export type OptimizeCriterion = z.infer<typeof optimizeCriterionEnum>;
 export type Coordinates = { lat: number; lon: number };
