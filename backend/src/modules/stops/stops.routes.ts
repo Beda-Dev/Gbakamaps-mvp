@@ -1,13 +1,34 @@
 // =============================================================================
-// Routes du module stops — lecture seule au MVP.
-// La création/modification d'arrêts passe par le module reports (modération
-// communautaire) ou le script d'import batch, jamais par un endpoint public
-// direct — corrige la faille de l'ancien projet où PATCH /api/stops/[id]
-// n'exigeait aucune authentification.
+// Routes du module stops.
+//
+// Lecture : publique (recherche, proximité, détail).
+// Écriture : réservée au rôle ADMIN via `requireAdmin`, jamais publique —
+// corrige la faille de l'ancien projet où PATCH /api/stops/[id] n'exigeait
+// aucune authentification (cf. PROJECT_MEMORY.md §7). Un utilisateur normal
+// qui veut signaler un problème sur un arrêt passe toujours par le module
+// reports (modération communautaire), pas par ces endpoints.
+//
+// Les routes publiques ci-dessous sont inchangées : le CRUD admin s'ajoute,
+// il ne remplace rien.
 // =============================================================================
 import type { FastifyInstance } from 'fastify';
-import { nearbyStopsQuerySchema, searchStopsQuerySchema, stopIdParamsSchema } from './stops.schemas.js';
-import { findById, findNearby, searchStops } from './stops.service.js';
+import { requireAdmin } from '../../common/auth-middleware.js';
+import {
+  createStopBodySchema,
+  nearbyStopsQuerySchema,
+  searchStopsQuerySchema,
+  stopIdParamsSchema,
+  updateStopBodySchema,
+} from './stops.schemas.js';
+import {
+  createStop,
+  deleteStop,
+  findById,
+  findNearby,
+  getStopDeletionImpact,
+  searchStops,
+  updateStop,
+} from './stops.service.js';
 
 export async function stopsRoutes(app: FastifyInstance) {
   // Recherche textuelle (nom d'arrêt ou de ligne) — écart UX comblé en
@@ -42,5 +63,39 @@ export async function stopsRoutes(app: FastifyInstance) {
     const { id } = stopIdParamsSchema.parse(request.params);
     const stop = await findById(id);
     return reply.send({ success: true, data: stop });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Administration (rôle ADMIN requis)
+  // ---------------------------------------------------------------------------
+
+  app.post('/admin/stops', { preHandler: requireAdmin }, async (request, reply) => {
+    const body = createStopBodySchema.parse(request.body);
+    const stop = await createStop(body);
+    return reply.status(201).send({ success: true, data: stop });
+  });
+
+  app.patch('/admin/stops/:id', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = stopIdParamsSchema.parse(request.params);
+    const body = updateStopBodySchema.parse(request.body);
+    const stop = await updateStop(id, body);
+    return reply.send({ success: true, data: stop });
+  });
+
+  // Consulté par l'UI AVANT d'afficher la confirmation de suppression, pour
+  // annoncer ce qui va réellement se passer plutôt qu'un "êtes-vous sûr ?"
+  // aveugle : favoris et dessertes sont détruits en cascade, tandis que les
+  // signalements survivent mais sont détachés (SetNull). Voir le détail dans
+  // stops.service.ts (StopDeletionImpact).
+  app.get('/admin/stops/:id/impact', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = stopIdParamsSchema.parse(request.params);
+    const impact = await getStopDeletionImpact(id);
+    return reply.send({ success: true, data: impact });
+  });
+
+  app.delete('/admin/stops/:id', { preHandler: requireAdmin }, async (request, reply) => {
+    const { id } = stopIdParamsSchema.parse(request.params);
+    const deleted = await deleteStop(id);
+    return reply.send({ success: true, data: deleted });
   });
 }

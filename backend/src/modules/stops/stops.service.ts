@@ -10,6 +10,7 @@ import { Prisma } from '../../generated/prisma/index.js';
 import { prisma } from '../../db/prisma.js';
 import { NotFoundError } from '../../common/errors.js';
 import { serializeStopBigInt } from '../../common/serialize.js';
+import type { CreateStopBody, UpdateStopBody } from './stops.schemas.js';
 
 const STOP_LINE_INCLUDE = {
   stopLines: {
@@ -173,4 +174,105 @@ export async function findById(id: string) {
   }
 
   return toApiStop(stop);
+}
+
+// =============================================================================
+// Administration des arrêts (CRUD réservé au rôle ADMIN — voir stops.routes.ts).
+// =============================================================================
+
+const ADMIN_STOP_INCLUDE = {
+  ...STOP_LINE_INCLUDE,
+  _count: { select: { favorites: true, reports: true } },
+} as const;
+
+// `source` est forcé à COMMUNITY et `osmId` n'est jamais renseigné : un arrêt
+// saisi par un administrateur n'est pas un arrêt importé d'OpenStreetMap, et
+// lui fabriquer un osmId créerait une fausse référence externe (bug réel de
+// l'ancien projet, cf. PROJECT_MEMORY.md §7). La colonne PostGIS `geog` est
+// remplie automatiquement par le trigger SQL stops_sync_geog_trigger à partir
+// de lat/lon — rien à faire ici, mais c'est la raison pour laquelle lat/lon
+// sont obligatoires à la création.
+export async function createStop(input: CreateStopBody) {
+  const stop = await prisma.stop.create({
+    data: { ...input, source: 'COMMUNITY' },
+    include: ADMIN_STOP_INCLUDE,
+  });
+  return toApiStop(stop);
+}
+
+export async function updateStop(id: string, input: UpdateStopBody) {
+  const existing = await prisma.stop.findUnique({ where: { id }, select: { id: true } });
+  if (!existing) {
+    throw new NotFoundError('Arrêt');
+  }
+
+  // `lastUpdated` n'est pas un champ @updatedAt côté Prisma (il porte
+  // seulement @default(now())) : il faut donc l'avancer explicitement, sinon
+  // une modification d'arrêt laisserait une date de dernière mise à jour
+  // trompeuse (celle de l'import GTFS d'origine).
+  const stop = await prisma.stop.update({
+    where: { id },
+    data: { ...input, lastUpdated: new Date() },
+    include: ADMIN_STOP_INCLUDE,
+  });
+  return toApiStop(stop);
+}
+
+// Conséquences réelles d'une suppression, comptées AVANT de supprimer quoi
+// que ce soit. Les trois relations de Stop ne se comportent PAS de la même
+// façon — vérifié dans schema.prisma, pas supposé :
+//   - Favorite : onDelete Cascade  -> DÉTRUIT (favoris d'autres utilisateurs)
+//   - StopLine : onDelete Cascade  -> DÉTRUIT (dessertes de lignes)
+//   - Report   : onDelete SetNull  -> CONSERVÉ, mais détaché (stopId = null)
+// Cette distinction compte pour l'UI : annoncer "2 signalements seront
+// supprimés" serait faux (ils survivent), mais ne rien dire le serait aussi
+// (ils perdent définitivement le lien vers l'arrêt qu'ils décrivaient, donc
+// une bonne part de leur sens pour un modérateur). Les deux cas sont donc
+// comptés séparément et nommés pour ce qu'ils sont.
+export interface StopDeletionImpact {
+  id: string;
+  name: string | null;
+  // Supprimés définitivement avec l'arrêt (cascade).
+  favoritesDeleted: number;
+  stopLinesDeleted: number;
+  // Conservé mais détaché de l'arrêt (SetNull) — pas une perte de donnée,
+  // une perte de rattachement.
+  reportsDetached: number;
+}
+
+export async function getStopDeletionImpact(id: string): Promise<StopDeletionImpact> {
+  const stop = await prisma.stop.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      _count: { select: { favorites: true, reports: true, stopLines: true } },
+    },
+  });
+
+  if (!stop) {
+    throw new NotFoundError('Arrêt');
+  }
+
+  return {
+    id: stop.id,
+    name: stop.name,
+    favoritesDeleted: stop._count.favorites,
+    stopLinesDeleted: stop._count.stopLines,
+    reportsDetached: stop._count.reports,
+  };
+}
+
+// Suppression dure assumée (pas de désactivation) : `Stop` n'a pas de champ
+// `active`, contrairement à `TransportLine`. En ajouter un obligerait à
+// filtrer dessus dans findNearby/searchStops, le planificateur de trajet et
+// le rapprochement places/stops — un risque de régression disproportionné
+// hors du périmètre de ce chantier. La perte est donc rendue explicite via
+// getStopDeletionImpact plutôt que masquée derrière un drapeau.
+// L'impact est renvoyé pour que l'appelant puisse afficher ce qui a
+// réellement été supprimé, et pas seulement "supprimé avec succès".
+export async function deleteStop(id: string): Promise<StopDeletionImpact> {
+  const impact = await getStopDeletionImpact(id);
+  await prisma.stop.delete({ where: { id } });
+  return impact;
 }

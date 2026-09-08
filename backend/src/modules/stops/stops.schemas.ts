@@ -93,3 +93,71 @@ export const searchStopsQuerySchema = z.object({
 
 export type NearbyStopsQuery = z.infer<typeof nearbyStopsQuerySchema>;
 export type SearchStopsQuery = z.infer<typeof searchStopsQuerySchema>;
+
+// =============================================================================
+// Administration des arrêts (CRUD admin, PROJECT_MEMORY.md §12.8 — demande
+// explicite de l'utilisateur, confirmée deux fois).
+//
+// Deux principes structurants, repris des garde-fous du projet :
+//   1. NE JAMAIS INVENTER DE DONNÉE. Un champ non renseigné reste null/absent,
+//      jamais une valeur devinée. `name` est nullable au schéma Prisma : une
+//      chaîne vide envoyée par le formulaire devient null, pas "Arrêt sans nom".
+//   2. `source` et `osmId` ne sont JAMAIS pilotables depuis l'API. Un arrêt
+//      créé ici est par définition COMMUNITY, et son osmId reste null — c'est
+//      exactement le bug de l'ancien projet (osmId = BigInt(Date.now()), qui
+//      fabriquait une fausse référence OSM, cf. PROJECT_MEMORY.md §7).
+// =============================================================================
+
+// Nom d'arrêt : optionnel partout. `''` (champ de formulaire vidé) est
+// interprété comme "pas de nom" (null), jamais comme un nom vide en base.
+const stopNameSchema = z
+  .string()
+  .trim()
+  .max(200, 'Nom trop long (200 caractères maximum)')
+  .nullable()
+  .transform((val) => (val === '' ? null : val))
+  .optional();
+
+// Tags booléens réels du modèle Stop. Tous optionnels : absent = inchangé
+// (PATCH) ou valeur par défaut du schéma Prisma (POST) — jamais forcé à false
+// arbitrairement, ce qui reviendrait à affirmer "cet arrêt ne prend pas de
+// gbaka" alors que l'admin n'a simplement rien dit.
+const stopFlagsSchema = {
+  shelter: z.boolean().optional(),
+  bench: z.boolean().optional(),
+  wheelchair: z.boolean().optional(),
+  gbaka: z.boolean().optional(),
+  woroworo: z.boolean().optional(),
+  taxi: z.boolean().optional(),
+  mototaxi: z.boolean().optional(),
+  verified: z.boolean().optional(),
+};
+
+export const createStopBodySchema = z.object({
+  name: stopNameSchema,
+  // Coordonnées obligatoires à la création : un arrêt sans position n'a aucun
+  // sens dans une application cartographique (et la colonne PostGIS `geog`
+  // est calculée depuis lat/lon par un trigger SQL).
+  lat: latSchema,
+  lon: lonSchema,
+  stopType: stopTypeEnum.optional(),
+  ...stopFlagsSchema,
+});
+
+export const updateStopBodySchema = z
+  .object({
+    name: stopNameSchema,
+    lat: latSchema.optional(),
+    lon: lonSchema.optional(),
+    stopType: stopTypeEnum.optional(),
+    ...stopFlagsSchema,
+  })
+  // Un PATCH vide est refusé explicitement plutôt que traité comme un no-op
+  // silencieux : côté UI, cela signale un formulaire qui n'a rien envoyé
+  // (bug) plutôt que de renvoyer 200 en n'ayant rien fait.
+  .refine((body) => Object.keys(body).length > 0, {
+    message: 'Aucun champ à modifier',
+  });
+
+export type CreateStopBody = z.infer<typeof createStopBodySchema>;
+export type UpdateStopBody = z.infer<typeof updateStopBodySchema>;
