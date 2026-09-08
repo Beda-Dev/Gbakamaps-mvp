@@ -12,20 +12,27 @@
 // il ne remplace rien.
 // =============================================================================
 import type { FastifyInstance } from 'fastify';
-import { requireAdmin } from '../../common/auth-middleware.js';
+import { requireAdmin, requireAuth } from '../../common/auth-middleware.js';
+import { UnauthorizedError, ValidationError } from '../../common/errors.js';
 import {
   createStopBodySchema,
   nearbyStopsQuerySchema,
   searchStopsQuerySchema,
   stopIdParamsSchema,
+  stopPhotoParamsSchema,
   updateStopBodySchema,
 } from './stops.schemas.js';
 import {
+  addStopPhoto,
   createStop,
   deleteStop,
+  deleteStopPhoto,
   findById,
   findNearby,
+  findStopPhotos,
   getStopDeletionImpact,
+  isPhotosFeatureConfigured,
+  listCommunityPhotos,
   searchStops,
   updateStop,
 } from './stops.service.js';
@@ -63,6 +70,72 @@ export async function stopsRoutes(app: FastifyInstance) {
     const { id } = stopIdParamsSchema.parse(request.params);
     const stop = await findById(id);
     return reply.send({ success: true, data: stop });
+  });
+
+  // Photos réelles à proximité (Mapillary + Panoramax, voir
+  // stops.service.ts) — couverture partielle et vérifiée (§9/§12.8) :
+  // Panoramax ne nécessite aucune clé, donc `configured` reste toujours
+  // `true` désormais (Mapillary reste une source en plus si sa clé est
+  // présente) — un tableau `photos` vide est un résultat réel ("rien
+  // trouvé près de cet arrêt"), pas une fonctionnalité désactivée.
+  app.get('/stops/:id/photos', async (request, reply) => {
+    const { id } = stopIdParamsSchema.parse(request.params);
+    const [external, community] = await Promise.all([
+      findStopPhotos(id),
+      listCommunityPhotos(id),
+    ]);
+    return reply.send({
+      success: true,
+      data: {
+        photos: external,
+        // Distinctes des photos externes : hébergées par nous (URL relative
+        // /api/uploads/..., pas un CDN tiers), avec l'auteur et un vrai
+        // bouton de suppression côté frontend (soi-même ou un admin).
+        communityPhotos: community.map((p) => ({
+          id: p.id,
+          url: `/api/uploads/stop-photos/${p.filePath}`,
+          createdAt: p.createdAt.toISOString(),
+          uploadedByUserId: p.uploadedByUserId,
+          uploadedByName: p.uploadedByName,
+        })),
+        configured: isPhotosFeatureConfigured(),
+      },
+    });
+  });
+
+  // Ajout d'une photo par un utilisateur connecté (ou un admin) — demande
+  // explicite de l'utilisateur, complète les sources externes ci-dessus
+  // dont la couverture reste partielle. Upload multipart (1 fichier, champ
+  // "photo", 5 Mo max — voir la limite globale posée dans app.ts).
+  app.post('/stops/:id/photos', { preHandler: requireAuth }, async (request, reply) => {
+    const { id } = stopIdParamsSchema.parse(request.params);
+    if (!request.currentUser) throw new UnauthorizedError();
+
+    const file = await request.file();
+    if (!file) throw new ValidationError('Aucun fichier reçu (champ "photo" attendu)');
+
+    const buffer = await file.toBuffer();
+    const photo = await addStopPhoto(id, request.currentUser.id, file.mimetype, buffer);
+
+    return reply.status(201).send({
+      success: true,
+      data: {
+        id: photo.id,
+        url: `/api/uploads/stop-photos/${photo.filePath}`,
+        createdAt: photo.createdAt.toISOString(),
+        uploadedByUserId: photo.uploadedByUserId,
+        uploadedByName: photo.uploadedByName,
+      },
+    });
+  });
+
+  // Suppression réservée à l'auteur de la photo ou à un admin (vérifié dans
+  // deleteStopPhoto — jamais uniquement côté route).
+  app.delete('/stops/:id/photos/:photoId', { preHandler: requireAuth }, async (request, reply) => {
+    const { photoId } = stopPhotoParamsSchema.parse(request.params);
+    if (!request.currentUser) throw new UnauthorizedError();
+    await deleteStopPhoto(photoId, request.currentUser.id, request.currentUser.role);
+    return reply.send({ success: true, data: null });
   });
 
   // ---------------------------------------------------------------------------

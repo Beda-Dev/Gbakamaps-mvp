@@ -276,3 +276,264 @@ export async function deleteStop(id: string): Promise<StopDeletionImpact> {
   await prisma.stop.delete({ where: { id } });
   return impact;
 }
+
+// =============================================================================
+// Photos réelles à proximité d'un arrêt — PROJECT_MEMORY.md §9, demande
+// explicite de l'utilisateur. Deux sources combinées, vérifiées
+// empiriquement AVANT implémentation (2026-09-08) sur un échantillon de 8
+// arrêts réels (plusieurs communes du Grand Abidjan) :
+//   - Mapillary (~25 % de couverture seule, rayon 50 m — plafond imposé par
+//     l'API "Image Radius Search", pas un choix arbitraire) ;
+//   - Panoramax (agrégateur libre porté par l'IGN/OSM France, licence
+//     CC-BY-SA, AUCUNE clé requise) — couverture PARTIELLEMENT DIFFÉRENTE
+//     de Mapillary (trouve des images là où Mapillary n'en a pas, et
+//     inversement) : combinées, ~37 % de couverture sur le même échantillon.
+// Deux sources interrogées en parallèle, jamais l'une bloquée par l'échec
+// de l'autre. Le frontend DOIT toujours traiter "aucune photo" comme un
+// état normal, jamais une erreur — la couverture reste partielle.
+// =============================================================================
+import { env } from '../../config/env.js';
+
+const MAPILLARY_URL = 'https://graph.mapillary.com/images';
+// Rayon maximal accepté par l'endpoint de recherche par proximité Mapillary
+// (Image Radius Search) — vérifié dans la documentation officielle, pas une
+// valeur choisie arbitrairement : 50 m est le PLAFOND, pas une option parmi
+// d'autres.
+const MAPILLARY_SEARCH_RADIUS_METERS = 50;
+const PANORAMAX_URL = 'https://api.panoramax.xyz/api/search';
+// Panoramax s'interroge par bbox (pas de recherche par rayon dédiée) — une
+// bbox d'environ 60 m de côté autour du point, cohérente avec le rayon
+// Mapillary ci-dessus.
+const PANORAMAX_BBOX_DEG = 0.0006;
+const PHOTO_FETCH_TIMEOUT_MS = 10_000;
+const MAX_PHOTOS_PER_SOURCE = 6;
+
+export type StopPhotoSource = 'mapillary' | 'panoramax';
+
+export interface StopPhoto {
+  id: string;
+  source: StopPhotoSource;
+  thumbnailUrl: string;
+  capturedAt: number | null;
+  compassAngle: number | null;
+  // Mention de licence à afficher à côté de l'image (exigence réelle de la
+  // licence CC-BY-SA de Panoramax — jamais une photo affichée sans son
+  // attribution/licence).
+  license: string | null;
+}
+
+export function isPhotosFeatureConfigured(): boolean {
+  // Panoramax ne nécessite aucune clé — la fonctionnalité reste active
+  // même sans jeton Mapillary configuré (dégradée à une seule source).
+  return true;
+}
+
+interface MapillaryImage {
+  id: string;
+  thumb_1024_url?: string;
+  captured_at?: number;
+  compass_angle?: number;
+}
+
+async function findMapillaryPhotos(lat: number, lon: number): Promise<StopPhoto[]> {
+  if (!env.MAPILLARY_ACCESS_TOKEN) return [];
+
+  const params = new URLSearchParams({
+    access_token: env.MAPILLARY_ACCESS_TOKEN,
+    lat: String(lat),
+    lng: String(lon),
+    radius: String(MAPILLARY_SEARCH_RADIUS_METERS),
+    fields: 'id,thumb_1024_url,captured_at,compass_angle',
+    limit: String(MAX_PHOTOS_PER_SOURCE),
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${MAPILLARY_URL}?${params.toString()}`, {
+      signal: AbortSignal.timeout(PHOTO_FETCH_TIMEOUT_MS),
+    });
+  } catch {
+    // Panne réseau : dégradation silencieuse, jamais une erreur qui
+    // casserait l'affichage du reste de l'arrêt (l'autre source peut
+    // encore fonctionner, et même sans aucune photo l'arrêt reste utile).
+    return [];
+  }
+  if (!response.ok) return [];
+
+  const data = (await response.json().catch(() => null)) as { data?: MapillaryImage[] } | null;
+  if (!data?.data) return [];
+
+  return data.data
+    .filter((img) => !!img.thumb_1024_url)
+    .map((img) => ({
+      id: `mapillary-${img.id}`,
+      source: 'mapillary' as const,
+      thumbnailUrl: img.thumb_1024_url!,
+      capturedAt: img.captured_at ?? null,
+      compassAngle: img.compass_angle ?? null,
+      license: null,
+    }));
+}
+
+interface PanoramaxFeature {
+  id: string;
+  assets?: { sd?: { href?: string }; thumb?: { href?: string } };
+  properties?: { datetime?: string; 'view:azimuth'?: number; license?: string };
+}
+
+async function findPanoramaxPhotos(lat: number, lon: number): Promise<StopPhoto[]> {
+  const d = PANORAMAX_BBOX_DEG;
+  const params = new URLSearchParams({
+    limit: String(MAX_PHOTOS_PER_SOURCE),
+    bbox: `${lon - d},${lat - d},${lon + d},${lat + d}`,
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${PANORAMAX_URL}?${params.toString()}`, {
+      signal: AbortSignal.timeout(PHOTO_FETCH_TIMEOUT_MS),
+    });
+  } catch {
+    return [];
+  }
+  if (!response.ok) return [];
+
+  const data = (await response.json().catch(() => null)) as { features?: PanoramaxFeature[] } | null;
+  if (!data?.features) return [];
+
+  return data.features
+    .filter((f) => !!(f.assets?.sd?.href ?? f.assets?.thumb?.href))
+    .map((f) => ({
+      id: `panoramax-${f.id}`,
+      source: 'panoramax' as const,
+      thumbnailUrl: (f.assets!.sd?.href ?? f.assets!.thumb?.href)!,
+      capturedAt: f.properties?.datetime ? new Date(f.properties.datetime).getTime() : null,
+      compassAngle: f.properties?.['view:azimuth'] ?? null,
+      license: f.properties?.license ?? 'CC-BY-SA-4.0',
+    }));
+}
+
+export async function findStopPhotos(stopId: string): Promise<StopPhoto[]> {
+  const stop = await prisma.stop.findUnique({ where: { id: stopId }, select: { lat: true, lon: true } });
+  if (!stop) throw new NotFoundError('Arrêt');
+
+  // Les deux sources sont interrogées en parallèle et fusionnées — jamais
+  // l'échec de l'une ne prive l'utilisateur des résultats de l'autre.
+  const [mapillary, panoramax] = await Promise.all([
+    findMapillaryPhotos(stop.lat, stop.lon),
+    findPanoramaxPhotos(stop.lat, stop.lon),
+  ]);
+  return [...mapillary, ...panoramax];
+}
+
+// =============================================================================
+// Photos communautaires (utilisateurs connectés + admins) — complètent les
+// sources externes ci-dessus (Mapillary/Panoramax), dont la couverture
+// reste partielle. Le fichier est stocké sur disque (volume Docker
+// persistant, voir docker-compose.yml), jamais en base — seules les
+// métadonnées (chemin, auteur, date) sont en base.
+// =============================================================================
+import { randomUUID } from 'node:crypto';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ForbiddenError } from '../../common/errors.js';
+
+// Liste blanche stricte de types MIME acceptés — jamais un fichier arbitraire
+// écrit sur disque avec l'extension que le client prétend lui donner.
+const ALLOWED_MIME_TYPES: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
+const UPLOADS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'uploads', 'stop-photos');
+
+export class UnsupportedPhotoTypeError extends ForbiddenError {
+  constructor() {
+    super('Format de photo non supporté (jpeg, png ou webp uniquement)');
+  }
+}
+
+export interface CommunityPhoto {
+  id: string;
+  filePath: string;
+  createdAt: Date;
+  uploadedByUserId: string;
+  uploadedByName: string | null;
+}
+
+export async function addStopPhoto(
+  stopId: string,
+  userId: string,
+  mimeType: string,
+  buffer: Buffer
+): Promise<CommunityPhoto> {
+  const stop = await prisma.stop.findUnique({ where: { id: stopId }, select: { id: true } });
+  if (!stop) throw new NotFoundError('Arrêt');
+
+  const extension = ALLOWED_MIME_TYPES[mimeType];
+  if (!extension) throw new UnsupportedPhotoTypeError();
+
+  await mkdir(UPLOADS_DIR, { recursive: true });
+  // Nom de fichier généré côté serveur (UUID) — jamais le nom fourni par le
+  // client, qui pourrait contenir un chemin ("../../etc/passwd") ou entrer
+  // en collision avec un fichier existant.
+  const filename = `${randomUUID()}.${extension}`;
+  await writeFile(join(UPLOADS_DIR, filename), buffer);
+
+  const created = await prisma.stopPhoto.create({
+    data: { stopId, uploadedByUserId: userId, filePath: filename },
+    include: { uploadedByUser: { select: { displayName: true } } },
+  });
+
+  return {
+    id: created.id,
+    filePath: created.filePath,
+    createdAt: created.createdAt,
+    uploadedByUserId: created.uploadedByUserId,
+    uploadedByName: created.uploadedByUser.displayName,
+  };
+}
+
+export async function listCommunityPhotos(stopId: string): Promise<CommunityPhoto[]> {
+  const rows = await prisma.stopPhoto.findMany({
+    where: { stopId },
+    include: { uploadedByUser: { select: { displayName: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    filePath: r.filePath,
+    createdAt: r.createdAt,
+    uploadedByUserId: r.uploadedByUserId,
+    uploadedByName: r.uploadedByUser.displayName,
+  }));
+}
+
+// Suppression réservée à l'auteur de la photo OU à un admin — jamais à un
+// autre utilisateur, même connecté.
+export async function deleteStopPhoto(
+  photoId: string,
+  requestingUserId: string,
+  requestingUserRole: string
+): Promise<void> {
+  const photo = await prisma.stopPhoto.findUnique({ where: { id: photoId } });
+  if (!photo) throw new NotFoundError('Photo');
+
+  const isOwner = photo.uploadedByUserId === requestingUserId;
+  const isAdmin = requestingUserRole === 'ADMIN';
+  if (!isOwner && !isAdmin) {
+    throw new ForbiddenError("Vous ne pouvez supprimer que vos propres photos");
+  }
+
+  await prisma.stopPhoto.delete({ where: { id: photoId } });
+  // Suppression du fichier APRÈS la ligne en base : en cas d'échec disque,
+  // la métadonnée est déjà cohérente (photo introuvable en base = plus
+  // jamais référencée), un fichier orphelin sur disque est un problème
+  // mineur de nettoyage, jamais une incohérence visible pour l'utilisateur.
+  await unlink(join(UPLOADS_DIR, photo.filePath)).catch(() => {
+    // Fichier déjà absent ou erreur disque : sans conséquence pour
+    // l'utilisateur, la ligne en base (la seule chose qu'il voit) est supprimée.
+  });
+}

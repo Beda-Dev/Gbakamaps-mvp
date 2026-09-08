@@ -66,6 +66,11 @@ export const stopIdParamsSchema = z.object({
   id: z.string().uuid('Identifiant invalide'),
 });
 
+export const stopPhotoParamsSchema = z.object({
+  id: z.string().uuid('Identifiant invalide'),
+  photoId: z.string().uuid('Identifiant invalide'),
+});
+
 // Recherche textuelle (nom d'arrêt ou nom/n° de ligne) — écart UX identifié
 // en phase 2 (PROJECT_MEMORY.md §12) : jusqu'ici, aucun moyen de trouver un
 // arrêt par son nom, seulement par proximité géographique. `near` est

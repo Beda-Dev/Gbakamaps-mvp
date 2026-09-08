@@ -39,6 +39,18 @@ export const tripPlanQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).default(5),
 });
 
+// Narration IA d'un plan précis parmi ceux que /trip-plan aurait renvoyés
+// pour les mêmes paramètres — mêmes critères que tripPlanQuerySchema, plus
+// l'index du plan à narrer. Le plan est RECALCULÉ ici (jamais accepté tel
+// quel depuis le client) : accepter un objet "plan" arbitraire envoyé par
+// le client permettrait de faire dire à Gemini des faits fabriqués côté
+// client comme s'ils étaient un vrai trajet calculé par notre moteur.
+export const narrateTripQuerySchema = tripPlanQuerySchema.extend({
+  planIndex: z.coerce.number().int().min(0).max(9).default(0),
+});
+
+export type NarrateTripQuery = z.infer<typeof narrateTripQuerySchema>;
+
 export type TripPlanQuery = z.infer<typeof tripPlanQuerySchema>;
 export type OptimizeCriterion = z.infer<typeof optimizeCriterionEnum>;
 export type Coordinates = { lat: number; lon: number };

@@ -35,6 +35,7 @@
 // =============================================================================
 import { Prisma } from '../../generated/prisma/index.js';
 import { prisma } from '../../db/prisma.js';
+import { generateText } from '../../common/gemini.js';
 import type { Coordinates, OptimizeCriterion } from './trip-planning.schemas.js';
 
 // --- Constantes de planification (documentées, jamais présentées comme des
@@ -456,4 +457,52 @@ export async function planTrip(params: PlanTripParams): Promise<{ plans: TripPla
       "Coût : tarif par ligne — indicatif (costVerified=false) tant qu'aucun administrateur ne l'a confirmé, " +
       'fiable une fois vérifié (costVerified=true). Correspondances limitées à un changement au même arrêt physique.',
   };
+}
+
+// =============================================================================
+// Narration en langage naturel d'un plan déjà calculé (Gemini) — première
+// fonctionnalité IA du projet (PROJECT_MEMORY.md §12.8, "description en
+// langage naturel d'un itinéraire"), demande explicite de l'utilisateur.
+//
+// Principe non négociable : Gemini ne reçoit QUE des faits déjà calculés et
+// vérifiés par notre propre moteur (planTrip ci-dessus) — noms d'arrêts
+// réels, lignes réelles, durées/coûts déjà estimés avec leur statut
+// vérifié/non vérifié. Le prompt lui interdit explicitement d'ajouter une
+// information non fournie (aucune donnée temps réel, aucun prix inventé).
+// Gemini ne fait QUE reformuler en prose fluide des faits qu'on lui donne —
+// jamais une source de vérité sur le trajet lui-même.
+// =============================================================================
+function describeStepForPrompt(step: TripStep, index: number): string {
+  if (step.type === 'walk') {
+    const dest = step.toLabel ? ` jusqu'à ${step.toLabel}` : step.fromLabel ? ` depuis ${step.fromLabel}` : '';
+    return `${index + 1}. Marcher ${step.distanceMeters} m (environ ${Math.round(step.durationSeconds / 60)} min)${dest}.`;
+  }
+  const lineName = step.line ? `${step.line.shortName ?? ''} ${step.line.name}`.trim() : 'une ligne';
+  const cost =
+    step.costFCFA === null || step.costFCFA === undefined
+      ? 'coût inconnu'
+      : `${step.costFCFA} FCFA${step.costVerified ? ' (tarif confirmé)' : ' (tarif indicatif, non confirmé par un administrateur)'}`;
+  return (
+    `${index + 1}. Prendre la ligne ${lineName} de l'arrêt "${step.boardStop?.name ?? 'arrêt'}" ` +
+    `à l'arrêt "${step.alightStop?.name ?? 'arrêt'}" (environ ${Math.round(step.durationSeconds / 60)} min, ${cost}).`
+  );
+}
+
+export async function narratePlan(plan: TripPlan): Promise<string> {
+  const stepsDescription = plan.steps.map(describeStepForPrompt).join('\n');
+  const totalCost =
+    plan.totalCostFCFA === null
+      ? 'coût total inconnu'
+      : `coût total ${plan.totalCostFCFA} FCFA${plan.costVerified ? ' (tarifs confirmés)' : ' (estimation, tarifs non tous confirmés)'}`;
+
+  const prompt = `Tu es un assistant qui explique un trajet de transport en commun à Abidjan (Côte d'Ivoire) à un utilisateur, en français, de façon claire, chaleureuse et concise (4-6 phrases maximum).
+
+RÈGLE ABSOLUE : n'utilise QUE les informations ci-dessous. N'invente JAMAIS un nom d'arrêt, une ligne, une durée, un prix, un horaire ou une information qui n'est pas explicitement fournie. Si une information manque (ex. coût inconnu), dis-le simplement, ne la remplace par aucune estimation de ton cru.
+
+Trajet calculé (durée totale ${Math.round(plan.totalDurationSeconds / 60)} min, distance totale ${plan.totalDistanceMeters} m, ${plan.transfersCount} correspondance(s), ${totalCost}) :
+${stepsDescription}
+
+Rédige une explication naturelle de ce trajet, étape par étape, comme si tu parlais à quelqu'un qui ne connaît pas Abidjan. Mentionne si un tarif est indicatif (pas confirmé).`;
+
+  return generateText(prompt);
 }

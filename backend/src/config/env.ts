@@ -57,6 +57,29 @@ const envSchema = z.object({
   // fournisseur non vérifié.
   GRAPHHOPPER_API_KEY: optionalNonEmpty(),
   GRAPHHOPPER_BASE_URL: z.string().url().default('https://graphhopper.com/api/1'),
+  // Gemini (Google AI) — narration en langage naturel d'un itinéraire déjà
+  // calculé (voir gemini.service.ts). Clés vérifiées réellement valides le
+  // 2026-09-08 (GET /v1beta/models a répondu avec la liste des modèles
+  // disponibles pour les deux clés). Optionnelles : en leur absence, la
+  // fonctionnalité de narration est simplement désactivée (le planificateur
+  // continue de fonctionner normalement, jamais une dépendance dure).
+  // Chaîne de repli clé 1 → clé 2, même schéma que ORS_API_KEY_2 ci-dessus.
+  GEMINI_API_KEY_1: optionalNonEmpty(),
+  GEMINI_API_KEY_2: optionalNonEmpty(),
+  // "gemini-flash-latest" (alias, pas un numéro de version figé) : plusieurs
+  // versions numérotées testées le 2026-09-08 (gemini-2.5-flash,
+  // gemini-2.5-flash-lite) se sont révélées DÉJÀ dépréciées pour les
+  // nouvelles clés ("no longer available to new users") — un alias "latest"
+  // évite d'avoir à suivre manuellement la dépréciation des versions.
+  GEMINI_MODEL: z.string().min(1).default('gemini-flash-latest'),
+  // Mapillary — photos de rue réelles près d'un arrêt (voir
+  // stops.service.ts, findStopPhotos). Couverture vérifiée empiriquement le
+  // 2026-09-08 : ~25 % des arrêts testés (échantillon aléatoire de 8 arrêts
+  // réels, plusieurs communes) ont au moins une image dans un rayon de 50 m
+  // — partielle, jamais garantie, d'où le repli "aucune photo disponible"
+  // toujours prévu côté frontend plutôt qu'une absence masquée. Optionnelle :
+  // fonctionnalité désactivée si absente.
+  MAPILLARY_ACCESS_TOKEN: optionalNonEmpty(),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -42,3 +42,7 @@ frontend/playwright-report/
 
 # spec API tierce téléchargée pour vérification (pas un artefact du projet)
 /openapi.json
+
+# photos communautaires uploadées en dev local (hors Docker) — en conteneur,
+# ce dossier vit dans le volume nommé backend_uploads, jamais dans l'image.
+backend/uploads/

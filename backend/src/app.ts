@@ -7,6 +7,11 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 
 import { env, isAllowedOrigin } from './config/env.js';
 import { globalErrorHandler, ForbiddenError } from './common/errors.js';
@@ -45,6 +50,32 @@ export async function buildApp() {
   });
 
   await app.register(cookie);
+
+  // Photos ajoutées par les utilisateurs/admins sur un arrêt (§9/§12.8) —
+  // limite de taille stricte (5 Mo) : un upload volumineux ne doit jamais
+  // pouvoir saturer le disque du conteneur, ni servir de vecteur de déni de
+  // service trivial.
+  await app.register(multipart, {
+    limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  });
+
+  // Sert les photos uploadées en fichiers statiques — dossier persistant via
+  // un volume Docker (voir docker-compose.yml), jamais dans le code source
+  // de l'image (perdu à chaque rebuild sinon).
+  const uploadsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'uploads');
+  // Créé au démarrage plutôt que supposé présent dans l'image/le volume —
+  // fonctionne aussi bien en dev local (hors Docker) qu'en conteneur.
+  mkdirSync(join(uploadsDir, 'stop-photos'), { recursive: true });
+  // Préfixe SOUS /api (pas /uploads/ à la racine) : le proxy Vite dev
+  // (frontend/vite.config.ts) ne redirige que "/api" vers le backend — un
+  // chemin "/uploads/..." appelé depuis le frontend serait résolu contre le
+  // serveur Vite lui-même (404), pas contre notre backend. Même règle à
+  // reproduire en prod (voir le commentaire équivalent dans vite.config.ts).
+  await app.register(fastifyStatic, {
+    root: uploadsDir,
+    prefix: '/api/uploads/',
+    decorateReply: false,
+  });
 
   await app.register(rateLimit, {
     global: true,

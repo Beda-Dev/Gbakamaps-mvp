@@ -32,9 +32,10 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  sessions  Session[]
-  favorites Favorite[]
-  reports   Report[]
+  sessions   Session[]
+  favorites  Favorite[]
+  reports    Report[]
+  stopPhotos StopPhoto[]
 
   @@map("users")
 }
@@ -72,8 +73,8 @@ model Stop {
 
   // Origine de la donnée : import batch OSM ou création communautaire.
   // Corrige l'ancien pipeline qui mélangeait les deux sans distinction claire.
-  source     StopSource @default(COMMUNITY)
-  osmId      BigInt?    @unique // uniquement renseigné si source = OSM
+  source StopSource @default(COMMUNITY)
+  osmId  BigInt?    @unique // uniquement renseigné si source = OSM
 
   // Tags enrichis
   shelter    Boolean? @default(false)
@@ -98,13 +99,40 @@ model Stop {
   // Haversine en JavaScript, non indexé.
   geog Unsupported("geography(Point, 4326)")?
 
-  favorites Favorite[]
-  reports   Report[]
-  stopLines StopLine[]
+  favorites       Favorite[]
+  reports         Report[]
+  stopLines       StopLine[]
+  communityPhotos StopPhoto[]
 
   @@index([lat, lon])
   @@index([geog(ops: raw("gist_geography_ops"))], type: Gist)
   @@map("stops")
+}
+
+// Photo ajoutée par un utilisateur connecté ou un admin (demande explicite
+// de l'utilisateur, §9/§12.8 — complète les photos externes Mapillary/
+// Panoramax, qui ne couvrent qu'une partie des arrêts, voir
+// stops.service.ts findStopPhotos). Le FICHIER lui-même est stocké sur le
+// disque du conteneur backend (volume Docker persistant, voir
+// docker-compose.yml) — seule cette table garde les métadonnées et le
+// chemin relatif. `onDelete: Cascade` sur `stop` : supprimer un arrêt
+// supprime ses photos communautaires (cohérent avec Favorite/StopLine, pas
+// avec Report qui doit survivre détaché — une photo n'a aucun sens sans
+// l'arrêt qu'elle montre).
+model StopPhoto {
+  id               String   @id @default(uuid())
+  stopId           String
+  uploadedByUserId String
+  // Chemin relatif sous le dossier d'uploads (jamais un chemin absolu ni
+  // fourni par le client — généré côté serveur, voir stops.service.ts).
+  filePath         String
+  createdAt        DateTime @default(now())
+
+  stop           Stop @relation(fields: [stopId], references: [id], onDelete: Cascade)
+  uploadedByUser User @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([stopId])
+  @@map("stop_photos")
 }
 
 enum StopSource {
@@ -162,22 +190,22 @@ enum TransportType {
 }
 
 model StopLine {
-  id        String  @id @default(uuid())
-  stopId    String
-  lineId    String
+  id                    String  @id @default(uuid())
+  stopId                String
+  lineId                String
   // Position de l'arrêt dans le sens `direction` de la ligne (0 = premier
   // arrêt de ce sens). Renseigné depuis stop_times.txt/trips.txt (GTFS
   // JungleBus) à partir d'un "voyage représentatif" par (ligne, sens) —
   // voir import-gtfs.ts. Null si l'arrêt n'apparaît que sur une variante de
   // trajet non retenue comme représentative (rare, cas de branches).
-  sequence  Int?
+  sequence              Int?
   // Sens de circulation (repris de trip_headsign, ex: "Gare Sud" — plus
   // parlant pour l'utilisateur qu'un simple 0/1 direction_id). Deux sens
   // d'une même ligne peuvent desservir des arrêts entièrement différents
   // (vérifié empiriquement sur ce jeu de données — pas une supposition),
   // donc chaque ligne physique peut avoir jusqu'à deux groupes d'arrêts
   // disjoints partageant le même lineId mais un `direction` différent.
-  direction String?
+  direction             String?
   // Secondes écoulées depuis le premier arrêt du voyage représentatif de ce
   // (ligne, sens) — permet d'estimer un temps de trajet ENTRE DEUX ARRÊTS de
   // la même ligne/sens par simple soustraction, sans dépendre de l'heure

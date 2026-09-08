@@ -35,9 +35,26 @@ services:
       ORS_API_KEY: ${ORS_API_KEY}
       ORS_API_KEY_2: ${ORS_API_KEY_2}
       GRAPHHOPPER_API_KEY: ${GRAPHHOPPER_API_KEY}
+      GEMINI_API_KEY_1: ${GEMINI_API_KEY_1}
+      GEMINI_API_KEY_2: ${GEMINI_API_KEY_2}
+      # ${VAR:-défaut} (pas juste ${VAR}) : une variable absente de .env
+      # deviendrait sinon une CHAÎNE VIDE transmise au conteneur, qui
+      # échouerait le `.min(1)` de env.ts au lieu de déclencher son
+      # `.default()` (piège déjà documenté sur GRAPHHOPPER_API_KEY,
+      # PROJECT_MEMORY.md — ici évité directement plutôt que reproduit).
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
+      MAPILLARY_ACCESS_TOKEN: ${MAPILLARY_ACCESS_TOKEN}
     ports:
       - "${PORT:-4000}:4000"
+    volumes:
+      # Photos communautaires (§9/§12.8) : un volume nommé persistant, pas
+      # un simple dossier dans l'image — sinon perdu à chaque rebuild
+      # (`docker compose up -d --build`, déjà une routine fréquente de ce
+      # projet après tout ajout de route, cf. PROJECT_MEMORY.md).
+      - backend_uploads:/app/uploads
 
 volumes:
   db_data:
     name: gbakamap_db_data
+  backend_uploads:
+    name: gbakamap_backend_uploads
