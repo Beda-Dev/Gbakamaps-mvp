@@ -47,6 +47,12 @@ export async function getLineById(id: string) {
       operator: true,
       fare: true,
       fareVerified: true,
+      // Tracé réel (data.gouv.ci), absent pour les lignes sans
+      // correspondance OSM exacte — voir import-line-shapes.ts. `shape:
+      // null` distingue explicitement "pas encore de tracé connu" plutôt
+      // que d'inventer un tracé approximatif ici.
+      shapeGeoJson: true,
+      shapeSource: true,
     },
   });
   if (!line) throw new NotFoundError('Ligne');

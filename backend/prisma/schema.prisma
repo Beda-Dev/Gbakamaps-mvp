@@ -173,6 +173,26 @@ model TransportLine {
   // script d'import sans dupliquer les lignes (upsert par ce champ).
   externalRef String? @unique
 
+  // Tracé RÉEL de la ligne (géométrie GeoJSON MultiLineString), importé
+  // depuis le jeu de données officiel "Lignes de transport à Abidjan"
+  // (data.gouv.ci/datasets/abidjantransport-lignes, source DigitalTransport4
+  // Africa, relevé 2021 — voir backend/src/scripts/import-line-shapes.ts).
+  // Corrèle EXACTEMENT avec `externalRef` via l'ID de relation OSM commun
+  // aux deux sources ("r5985016" ↔ "Line:relation:5985016") — vérifié
+  // empiriquement le 2026-09-08, jamais une correspondance devinée : 318
+  // des 391 lignes importées via GTFS ont un tracé officiel correspondant
+  // (le reste, souvent des variantes/déviations sans relation OSM propre,
+  // reste sans tracé plutôt que d'en approximer un faux).
+  // Stocké en Json (pas Unsupported/PostGIS) : donnée statique, jamais
+  // interrogée spatialement (pas de ST_DWithin dessus), seulement relue et
+  // renvoyée telle quelle au frontend pour affichage — un type géographique
+  // dédié n'apporterait rien ici et compliquerait l'accès Prisma.
+  shapeGeoJson Json?
+  // Provenance du tracé, pour ne jamais confondre un tracé officiel avec
+  // une future approximation calculée (ex. map-matching maison) qu'on
+  // pourrait vouloir stocker ici plus tard.
+  shapeSource  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

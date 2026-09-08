@@ -552,9 +552,10 @@ export function TripPlannerPage() {
         )}
         {!tripSegmentsLoading && tripSegments && (
           <p className="trip-planner__map-hint">
-            Tracé suivant les routes existantes (calculé via le même service que l'itinéraire vers un
-            arrêt) — approximatif : nous n'avons pas le tracé exact suivi par ce bus/gbaka, seulement
-            un itinéraire routier plausible entre les mêmes points.
+            Quand elle est connue (source : data.gouv.ci), le trajet en bus/gbaka suit le tracé réel de
+            la ligne ; sinon, il suit les routes existantes (calculé via le même service que
+            l'itinéraire vers un arrêt) — approximatif : un itinéraire routier plausible entre les mêmes
+            points, pas nécessairement le trajet exact du véhicule.
           </p>
         )}
       </div>
