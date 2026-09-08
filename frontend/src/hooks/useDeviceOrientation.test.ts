@@ -32,9 +32,15 @@ describe('cardinalLabel', () => {
 describe('useDeviceOrientation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    // @ts-expect-error -- nettoyage du stub statique ajouté par le test iOS
-    delete (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent
-      ?.requestPermission;
+    // Nettoyage du stub statique ajouté par le test iOS — cast typé plutôt
+    // qu'un `unknown` + @ts-expect-error, dont l'erreur réelle du compilateur
+    // (TS2339 sur `.requestPermission`) ne tombait pas sur la ligne attendue
+    // par la directive (bug réel trouvé par `gbakamaps-10` en vérifiant
+    // `tsc` avant de brancher une future CI — corrigé ici).
+    const event = globalThis.DeviceOrientationEvent as unknown as {
+      requestPermission?: () => Promise<string>;
+    };
+    delete event?.requestPermission;
   });
 
   it("sans DeviceOrientationEvent dans l'environnement, isSupported est false", () => {
