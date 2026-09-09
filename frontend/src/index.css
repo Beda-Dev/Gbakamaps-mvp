@@ -2718,3 +2718,266 @@ textarea.home__report-input {
   color: white !important;
   border-color: #b00020 !important;
 }
+
+/* ============================================================================
+   Administration des lignes (AdminLinesPage) — pas de carte ici (une ligne
+   n'est pas un point géolocalisé comme un arrêt), donc une page pleine
+   largeur à une seule colonne plutôt que le layout sidebar+carte des arrêts.
+   Réutilise les mêmes styles de dialogue/formulaire qu'admin-stops (mêmes
+   règles visuelles), dupliqués sous leur propre préfixe pour rester
+   indépendants si l'un des deux évolue différemment plus tard.
+   ============================================================================ */
+
+.admin-lines {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.admin-lines__forbidden {
+  margin: 4rem auto;
+  text-align: center;
+  padding: 2rem;
+}
+
+.admin-lines__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-lines__header h1 {
+  font-size: 1.3rem;
+  margin: 0;
+}
+
+.admin-lines__header a {
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.admin-lines__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-lines__search {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.admin-lines__add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid var(--color-primary);
+  color: var(--color-primary);
+  background: white;
+  border-radius: 6px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-lines__error {
+  font-size: 0.85rem;
+  color: #b00020;
+  margin: 0;
+}
+
+.admin-lines__status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0;
+}
+
+.admin-lines__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.admin-lines__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #eee;
+}
+
+.admin-lines__item.is-inactive {
+  opacity: 0.55;
+  background: #fafafa;
+}
+
+.admin-lines__color-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.admin-lines__item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-lines__item-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-lines__badge {
+  margin-left: 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: #b00020;
+  border: 1px solid #b00020;
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  vertical-align: middle;
+}
+
+.admin-lines__item-meta {
+  font-size: 0.72rem;
+  color: #6b6b6b;
+}
+
+.admin-lines__item button {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  white-space: nowrap;
+}
+
+.admin-lines__toggle-btn {
+  border: 1px solid #ddd !important;
+  border-radius: 6px;
+}
+
+.admin-lines__delete-btn {
+  color: #b00020 !important;
+  display: inline-flex;
+}
+
+.admin-lines__empty {
+  font-size: 0.85rem;
+  color: #6b6b6b;
+  padding: 1rem 0;
+  text-align: center;
+}
+
+.admin-lines__dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: 1rem;
+}
+
+.admin-lines__dialog {
+  background: white;
+  border-radius: 8px;
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 26rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-lines__dialog h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.admin-lines__dialog-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #6b6b6b;
+}
+
+.admin-lines__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.admin-lines__field input,
+.admin-lines__field select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.admin-lines__field-error {
+  font-size: 0.75rem;
+  color: #b00020;
+}
+
+.admin-lines__impact {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.admin-lines__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.admin-lines__dialog-actions button {
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 1px solid #ddd;
+  background: white;
+}
+
+.admin-lines__dialog-actions button[type='submit'] {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+.admin-lines__delete-confirm {
+  background: #b00020 !important;
+  color: white !important;
+  border-color: #b00020 !important;
+}

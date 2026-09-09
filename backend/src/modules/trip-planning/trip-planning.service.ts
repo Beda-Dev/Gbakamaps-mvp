@@ -132,7 +132,13 @@ interface StopLineEntry {
 async function fetchStopLines(stopIds: string[]): Promise<StopLineEntry[]> {
   if (stopIds.length === 0) return [];
   const rows = await prisma.stopLine.findMany({
-    where: { stopId: { in: stopIds } },
+    // `line.active: true` — une ligne désactivée par un admin (§12.16, CRUD
+    // lignes) ne doit plus jamais être proposée dans un plan de trajet,
+    // sinon la désactivation ne serait qu'un statut cosmétique côté
+    // /lines sans effet réel sur le calcul d'itinéraire. Bug trouvé en
+    // écrivant le CRUD lignes : cette fonction (et les 3 autres requêtes
+    // stopLine.findMany de ce fichier) ne filtrait pas dessus.
+    where: { stopId: { in: stopIds }, line: { active: true } },
     include: {
       stop: { select: { id: true, name: true, lat: true, lon: true } },
       line: { select: LINE_SELECT },
@@ -171,7 +177,12 @@ async function findReachableForward(entries: StopLineEntry[]): Promise<Reachable
   for (const entry of entries) {
     if (entry.sequence === null || entry.direction === null) continue;
     const rows = await prisma.stopLine.findMany({
-      where: { lineId: entry.lineId, direction: entry.direction, sequence: { gt: entry.sequence } },
+      where: {
+        lineId: entry.lineId,
+        direction: entry.direction,
+        sequence: { gt: entry.sequence },
+        line: { active: true },
+      },
       include: {
         stop: { select: { id: true, name: true, lat: true, lon: true } },
         line: { select: LINE_SELECT },
@@ -202,7 +213,12 @@ async function findReachableBackward(entries: StopLineEntry[]): Promise<Reachabl
   for (const entry of entries) {
     if (entry.sequence === null || entry.direction === null) continue;
     const rows = await prisma.stopLine.findMany({
-      where: { lineId: entry.lineId, direction: entry.direction, sequence: { lt: entry.sequence } },
+      where: {
+        lineId: entry.lineId,
+        direction: entry.direction,
+        sequence: { lt: entry.sequence },
+        line: { active: true },
+      },
       include: {
         stop: { select: { id: true, name: true, lat: true, lon: true } },
         line: { select: LINE_SELECT },
@@ -676,7 +692,7 @@ export async function computeReachableStops(
     }
     segmentFetches += 1;
     const rows = await prisma.stopLine.findMany({
-      where: { lineId, direction },
+      where: { lineId, direction, line: { active: true } },
       include: {
         stop: { select: { id: true, name: true, lat: true, lon: true } },
         line: { select: LINE_SELECT },

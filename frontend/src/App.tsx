@@ -21,6 +21,9 @@ const AdminReportsPage = lazy(() =>
 const AdminStopsPage = lazy(() =>
   import('@/pages/AdminStopsPage').then((m) => ({ default: m.AdminStopsPage }))
 );
+const AdminLinesPage = lazy(() =>
+  import('@/pages/AdminLinesPage').then((m) => ({ default: m.AdminLinesPage }))
+);
 const TripPlannerPage = lazy(() =>
   import('@/pages/TripPlannerPage').then((m) => ({ default: m.TripPlannerPage }))
 );
@@ -52,6 +55,7 @@ const router = createBrowserRouter([
   { path: '/reports', element: withSuspense(<ReportsPage />) },
   { path: '/admin/reports', element: withSuspense(<AdminReportsPage />) },
   { path: '/admin/stops', element: withSuspense(<AdminStopsPage />) },
+  { path: '/admin/lines', element: withSuspense(<AdminLinesPage />) },
   { path: '/planifier', element: withSuspense(<TripPlannerPage />) },
 ]);
 

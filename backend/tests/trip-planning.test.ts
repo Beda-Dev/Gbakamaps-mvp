@@ -176,4 +176,49 @@ describe('trip-planning module', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().data.plans).toEqual([]);
   });
+
+  // Bug réel trouvé le 2026-09-09 en écrivant le CRUD admin des lignes
+  // (§12.16/§12.21) : `active: false` désactivait bien une ligne de
+  // `GET /lines` (public), mais AUCUNE des requêtes stopLine.findMany de ce
+  // module ne filtrait dessus — une ligne "désactivée" par un admin restait
+  // donc pleinement utilisable dans un plan de trajet, rendant la
+  // désactivation purement cosmétique. Corrigé dans trip-planning.service.ts.
+  it("un trajet direct via une ligne DÉSACTIVÉE n'est plus proposé", async () => {
+    await prisma.transportLine.update({ where: { id: lineIds.L1 }, data: { active: false } });
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/trip-plan?from=${A.lat},${A.lon}&to=${C.lat},${C.lon}&maxTransfers=0`,
+      });
+      expect(res.statusCode).toBe(200);
+      const usesL1 = res
+        .json()
+        .data.plans.some((p: { steps: { type: string; line?: { id: string } }[] }) =>
+          p.steps.some((s) => s.type === 'ride' && s.line?.id === lineIds.L1)
+        );
+      expect(usesL1).toBe(false);
+    } finally {
+      // Réactivation systématique (try/finally) : ne jamais laisser la
+      // topologie semée dans un état modifié si une assertion échoue avant,
+      // ce qui casserait silencieusement les tests suivants du fichier.
+      await prisma.transportLine.update({ where: { id: lineIds.L1 }, data: { active: true } });
+    }
+  });
+
+  it("une correspondance via une ligne DÉSACTIVÉE n'est plus proposée", async () => {
+    await prisma.transportLine.update({ where: { id: lineIds.L2 }, data: { active: false } });
+    try {
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/trip-plan?from=${A.lat},${A.lon}&to=${D.lat},${D.lon}&maxTransfers=1&walkRadius=300`,
+      });
+      expect(res.statusCode).toBe(200);
+      const withTransfer = res
+        .json()
+        .data.plans.find((p: { transfersCount: number }) => p.transfersCount === 1);
+      expect(withTransfer).toBeUndefined();
+    } finally {
+      await prisma.transportLine.update({ where: { id: lineIds.L2 }, data: { active: true } });
+    }
+  });
 });

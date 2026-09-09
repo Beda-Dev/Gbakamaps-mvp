@@ -48,6 +48,9 @@ export function AuthStatus() {
           <Link className="auth-status__link" to="/admin/stops">
             Arrêts
           </Link>
+          <Link className="auth-status__link" to="/admin/lines">
+            Lignes
+          </Link>
         </>
       )}
       <span className="auth-status__name" title={user.email}>
