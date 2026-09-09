@@ -29,7 +29,7 @@ import {
 } from '@/hooks/useReachableStops';
 import { AuthStatus } from '@/components/AuthStatus';
 import { OnboardingBanner } from '@/components/OnboardingBanner';
-import { STOP_TYPE_LABELS, StopsMap } from '@/components/StopsMap';
+import { STOP_TYPE_COLORS, STOP_TYPE_LABELS, StopsMap } from '@/components/StopsMap';
 import { StopSearchBar } from '@/components/StopSearchBar';
 import {
   BikeIcon,
@@ -54,6 +54,16 @@ const DEFAULT_CENTER = { lat: 5.32, lon: -4.02 };
 // proximité") — bornes cohérentes avec celles acceptées par
 // GET /api/stops/nearby (100-20000m).
 const SEARCH_RADIUS_OPTIONS = [500, 1000, 1500, 2000, 5000] as const;
+
+// Filtre par mode de transport (§12.16 stopModeEnum, backend) — mêmes
+// couleurs que STOP_TYPE_COLORS (StopsMap.tsx) pour rester cohérent avec la
+// légende et les marqueurs déjà affichés, jamais une nouvelle palette.
+const MODE_FILTER_OPTIONS = [
+  { value: 'gbaka', label: 'Gbaka', color: STOP_TYPE_COLORS.GBAKA_STOP },
+  { value: 'woroworo', label: 'Wôrô-wôrô', color: STOP_TYPE_COLORS.WORO_WORO_STOP },
+  { value: 'taxi', label: 'Taxi', color: STOP_TYPE_COLORS.TAXI_STAND },
+  { value: 'mototaxi', label: 'Moto-taxi', color: STOP_TYPE_COLORS.MOTO_TAXI_STAND },
+] as const;
 
 interface GeoCenter {
   lat: number;
@@ -630,6 +640,22 @@ export function HomePage() {
   // valeur de départ (comportement historique de cette page, inchangé par
   // défaut).
   const [searchRadius, setSearchRadius] = useState(1500);
+  // Filtre par mode de transport (gbaka/woro-woro/taxi/moto-taxi) — écart
+  // identifié le 2026-09-09 (remarque directe de l'utilisateur, "les gbaka
+  // sont un peu negligé") : l'API le supportait déjà (stopModeEnum,
+  // stops.schemas.ts) mais aucun moyen dans l'interface ne permettait de
+  // l'utiliser. Vide par défaut = aucun filtre (tous les arrêts, comme
+  // avant ce changement) — sémantique OU côté backend, cohérent avec un
+  // filtre "au moins un de ces modes" plutôt qu'une intersection stricte.
+  const [activeModes, setActiveModes] = useState<Set<string>>(new Set());
+  function toggleMode(mode: string) {
+    setActiveModes((prev) => {
+      const next = new globalThis.Set(prev);
+      if (next.has(mode)) next.delete(mode);
+      else next.add(mode);
+      return next;
+    });
+  }
   // Affichage du cercle matérialisant ce rayon sur la carte — masqué par
   // défaut (demande explicite : bouton dédié pour l'activer, pas un cercle
   // permanent qui encombrerait la carte).
@@ -678,7 +704,7 @@ export function HomePage() {
     setIsochronePoint(point);
   }, []);
 
-  const stops = useNearbyStops(center.lat, center.lon, searchRadius);
+  const stops = useNearbyStops(center.lat, center.lon, searchRadius, Array.from(activeModes));
   const [selectedStop, setSelectedStop] = useState<Stop | null>(null);
   // Points d'intérêt réels autour de l'arrêt actuellement sélectionné
   // (pharmacie, marché, école...) — désactivé tant qu'aucun arrêt n'est
@@ -1041,6 +1067,31 @@ export function HomePage() {
             <span className="sr-only">Afficher la zone accessible en X minutes</span>
           </button>
         </p>
+      )}
+
+      {/* Filtre par mode de transport — écart identifié le 2026-09-09 :
+          l'API le supportait déjà, rien dans l'interface ne l'exposait.
+          Chips indépendantes (pas des cases à cocher classiques) pour
+          rester cohérent avec les autres bascules de cette barre. */}
+      {stops.data && (
+        <div className="home__mode-filters" role="group" aria-label="Filtrer par mode de transport">
+          {MODE_FILTER_OPTIONS.map((mode) => (
+            <button
+              key={mode.value}
+              type="button"
+              className={`home__mode-chip${activeModes.has(mode.value) ? ' is-active' : ''}`}
+              style={
+                activeModes.has(mode.value)
+                  ? { backgroundColor: mode.color, borderColor: mode.color }
+                  : { borderColor: mode.color, color: mode.color }
+              }
+              onClick={() => toggleMode(mode.value)}
+              aria-pressed={activeModes.has(mode.value)}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
       )}
       </main>
     </div>

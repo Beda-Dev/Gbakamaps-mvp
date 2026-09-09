@@ -240,6 +240,40 @@ button:disabled {
   color: white;
 }
 
+/* Filtre par mode de transport (gbaka/woro-woro/taxi/moto-taxi) — écart
+   identifié le 2026-09-09 : l'API le supportait déjà (stopModeEnum), rien
+   dans l'interface ne l'exposait. Chips colorées par la couleur réelle du
+   mode (cohérent avec la légende/les marqueurs), scrollables horizontalement
+   plutôt que de wrap sur plusieurs lignes — reste compact sur mobile. */
+.home__mode-filters {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0 0.5rem 0.5rem;
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  overflow-x: auto;
+  background: white;
+  border-top: 1px solid #eee;
+}
+
+.home__mode-chip {
+  flex-shrink: 0;
+  border: 1.5px solid #ddd;
+  background: white;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.home__mode-chip.is-active {
+  color: white;
+}
+
 /* --- Panneau "zone accessible en X min" (approximation §12.17/§12.18). ----
    Superposé en BAS à gauche de la carte, juste au-dessus de la légende —
    volontairement PAS en haut à gauche pour ne jamais recouvrir le sélecteur

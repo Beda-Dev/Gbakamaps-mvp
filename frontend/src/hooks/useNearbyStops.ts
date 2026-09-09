@@ -12,12 +12,17 @@ import type { NearbyStopsData } from '@/lib/api/types';
 // ce plafond, incohérent avec le cercle de rayon affiché à côté.
 export const NEARBY_STOPS_LIMIT = 500;
 
-export function useNearbyStops(lat: number, lon: number, radius = 2000) {
+// Modes filtrables (§12.16 stops.schemas.ts, stopModeEnum) — sémantique OU
+// côté backend : un arrêt correspond s'il porte AU MOINS un des modes
+// demandés (ex. ['gbaka','taxi'] -> gbaka=true OR taxi=true).
+export function useNearbyStops(lat: number, lon: number, radius = 2000, modes: string[] = []) {
+  const modesKey = [...modes].sort().join(',');
   return useQuery({
-    queryKey: ['stops', 'nearby', lat, lon, radius],
+    queryKey: ['stops', 'nearby', lat, lon, radius, modesKey],
     queryFn: () =>
       api.get<NearbyStopsData>(
-        `/stops/nearby?lat=${lat}&lon=${lon}&radius=${radius}&limit=${NEARBY_STOPS_LIMIT}`
+        `/stops/nearby?lat=${lat}&lon=${lon}&radius=${radius}&limit=${NEARBY_STOPS_LIMIT}` +
+          (modesKey ? `&modes=${modesKey}` : '')
       ),
     staleTime: 60_000,
     // Bug réel trouvé le 2026-09-06 en testant le sélecteur de rayon : sans
