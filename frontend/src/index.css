@@ -2931,6 +2931,38 @@ textarea.home__report-input {
   white-space: nowrap;
 }
 
+/* Conteneur des 3 actions (Modifier/Désactiver/×) — sur desktop, simple
+   rangée alignée à droite (comportement d'origine). */
+.admin-lines__item-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Bug UX réel trouvé en auditant avec une session connectée (2026-09-09,
+   §12.24) : sur mobile, les 3 actions forçaient le nom de la ligne —
+   l'information la plus importante — sur une colonne trop étroite, tronqué
+   en "02 — Cité Fairmon…" illisible. Empilé en colonne : nom+méta en pleine
+   largeur (peuvent enfin s'afficher en entier, sur plusieurs lignes si
+   besoin), actions sur leur propre rangée en dessous. */
+@media (max-width: 480px) {
+  .admin-lines__item {
+    flex-wrap: wrap;
+  }
+  .admin-lines__item-info {
+    flex-basis: calc(100% - 1.3rem);
+  }
+  .admin-lines__item-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .admin-lines__item-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
+}
+
 .admin-lines__toggle-btn {
   border: 1px solid #ddd !important;
   border-radius: 6px;

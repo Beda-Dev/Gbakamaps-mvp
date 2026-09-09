@@ -3,6 +3,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useFavorites } from '@/hooks/useFavorites';
 import { LoaderIcon, StarIcon } from '@/components/icons';
+import { STOP_TYPE_LABELS } from '@/components/StopsMap';
 
 export function FavoritesPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -77,7 +78,11 @@ export function FavoritesPage() {
                 <li key={fav.id} className="favorites__item">
                   <div className="favorites__info">
                     <p className="favorites__name">{stop?.name ?? 'Arrêt sans nom'}</p>
-                    {stop && <p className="favorites__meta">{stop.stopType}</p>}
+                    {stop && (
+                      <p className="favorites__meta">
+                        {STOP_TYPE_LABELS[stop.stopType] ?? stop.stopType}
+                      </p>
+                    )}
                     {lines.length > 0 && (
                       <ul className="favorites__lines">
                         {lines.map((line) => (

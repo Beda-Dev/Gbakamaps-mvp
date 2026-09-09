@@ -307,26 +307,33 @@ export function AdminLinesPage() {
                 {line.shapeSource && ' · tracé officiel connu'}
               </span>
             </div>
-            <button type="button" onClick={() => startEditing(line)} aria-label="Modifier">
-              Modifier
-            </button>
-            <button
-              type="button"
-              className="admin-lines__toggle-btn"
-              onClick={() => void toggleActive(line)}
-              disabled={updateLine.isPending}
-            >
-              {line.active ? 'Désactiver' : 'Réactiver'}
-            </button>
-            <button
-              type="button"
-              className="admin-lines__delete-btn"
-              onClick={() => openDeleteConfirm(line)}
-              aria-label="Supprimer définitivement"
-              title="Suppression définitive (préférer Désactiver)"
-            >
-              <XIcon width={14} height={14} aria-hidden="true" />
-            </button>
+            {/* Enveloppe dédiée : sur mobile, permet de passer les 3 actions
+                sur leur propre rangée sans toucher au nom de la ligne (voir
+                index.css, bug réel trouvé le 2026-09-09 — le nom était
+                tronqué "02 — Cité Fairmon…" faute de place à côté des
+                boutons). */}
+            <div className="admin-lines__item-actions">
+              <button type="button" onClick={() => startEditing(line)} aria-label="Modifier">
+                Modifier
+              </button>
+              <button
+                type="button"
+                className="admin-lines__toggle-btn"
+                onClick={() => void toggleActive(line)}
+                disabled={updateLine.isPending}
+              >
+                {line.active ? 'Désactiver' : 'Réactiver'}
+              </button>
+              <button
+                type="button"
+                className="admin-lines__delete-btn"
+                onClick={() => openDeleteConfirm(line)}
+                aria-label="Supprimer définitivement"
+                title="Suppression définitive (préférer Désactiver)"
+              >
+                <XIcon width={14} height={14} aria-hidden="true" />
+              </button>
+            </div>
           </li>
         ))}
         {!lines.isLoading && loadedLines.length === 0 && (
