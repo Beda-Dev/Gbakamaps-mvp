@@ -2004,6 +2004,15 @@ textarea.home__report-input {
   .trip-planner__map-panel {
     position: static;
     order: -1;
+    /* Bug réel trouvé en auditant l'UX mobile (2026-09-09, capture réelle) :
+       `flex: 1` (hérité du layout desktop, où le panel carte doit occuper
+       l'espace restant à côté du formulaire) reste actif ici, mais en
+       colonne mobile ça étire le panel sur TOUTE la hauteur restante de
+       l'écran — la carte gardait sa hauteur fixe (260px) pendant que son
+       conteneur grandissait bien au-delà, laissant un grand vide gris
+       entre la carte et le formulaire en dessous. `flex: none` : le panel
+       garde sa hauteur naturelle (celle de la carte + son texte d'aide).*/
+    flex: none;
   }
   .trip-planner__map-panel .trip-planner__map {
     height: 260px;
