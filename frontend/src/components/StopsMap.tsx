@@ -30,7 +30,7 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { Stop } from '@/lib/api/types';
 import type { RouteGeometry } from '@/hooks/useRoute';
-import { LoaderIcon, LocateFixedIcon } from '@/components/icons';
+import { LayersIcon, LoaderIcon, LocateFixedIcon } from '@/components/icons';
 
 const MAPTILER_KEYS = [
   import.meta.env.VITE_MAPTILER_KEY,
@@ -798,6 +798,13 @@ export function StopsMap({
   // changement de style (setStyle purge les sources/couches perso).
   const routeGeometryRef = useRef<RouteGeometry | null>(null);
   const [styleId, setStyleId] = useState<MapStyleId>(DEFAULT_STYLE);
+  // Sur petit écran, le sélecteur de style se replie en un seul bouton
+  // "calques" (façon Google Maps) qui ouvre cette liste au lieu de l'afficher
+  // en permanence — audit UX du 2026-09-09 (§12.24) : 5 boutons texte côte à
+  // côte débordaient sur les plus petits mobiles (390px). Sur desktop, le
+  // CSS ignore cet état et affiche toujours la rangée complète (voir
+  // .map-style-switcher__options dans index.css).
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   // Index de la clé MapTiler actuellement utilisée (-1 = repli OSM final).
   // En ref (pas en state) : lu depuis le handler 'error' stable de MapLibre,
@@ -1184,17 +1191,34 @@ export function StopsMap({
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
       {!onFinalFallback && (
-        <div className="map-style-switcher">
-          {MAP_STYLES.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={s.id === styleId ? 'is-active' : ''}
-              onClick={() => handleStyleChange(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
+        <div className={`map-style-switcher${styleMenuOpen ? ' is-open' : ''}`}>
+          {/* Visible seulement sur petit écran (CSS) — remplace la rangée de
+              boutons par un unique bouton "calques", façon Google Maps. */}
+          <button
+            type="button"
+            className="map-style-switcher__toggle"
+            onClick={() => setStyleMenuOpen((v) => !v)}
+            aria-expanded={styleMenuOpen}
+            aria-label="Changer le style de carte"
+            title="Changer le style de carte"
+          >
+            <LayersIcon width={18} height={18} aria-hidden="true" />
+          </button>
+          <div className="map-style-switcher__options">
+            {MAP_STYLES.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={s.id === styleId ? 'is-active' : ''}
+                onClick={() => {
+                  handleStyleChange(s.id);
+                  setStyleMenuOpen(false);
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {onRecenter && (

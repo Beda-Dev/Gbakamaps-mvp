@@ -631,17 +631,39 @@ button:disabled {
   top: calc(var(--search-bar-clearance) + env(safe-area-inset-top, 0px));
   left: calc(0.5rem + env(safe-area-inset-left, 0px));
   z-index: 10;
-  display: flex;
-  gap: 0.25rem;
   background: white;
-  padding: 0.25rem;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   max-width: calc(100% - 1rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+}
+
+/* Bouton "calques" replié — masqué par défaut (desktop : la rangée complète
+   ci-dessous reste toujours visible, comportement d'origine inchangé). */
+.map-style-switcher__toggle {
+  display: none;
+  border: none;
+  background: transparent;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #333;
+}
+
+.map-style-switcher__toggle:hover {
+  background: #eef6f6;
+}
+
+.map-style-switcher__options {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
   flex-wrap: wrap;
 }
 
-.map-style-switcher button {
+.map-style-switcher__options button {
   border: none;
   background: transparent;
   padding: 0.35rem 0.6rem;
@@ -655,13 +677,38 @@ button:disabled {
     opacity 0.2s ease;
 }
 
-.map-style-switcher button:hover {
+.map-style-switcher__options button:hover {
   background: #eef6f6;
 }
 
-.map-style-switcher button.is-active {
+.map-style-switcher__options button.is-active {
   background: var(--color-primary);
   color: white;
+}
+
+/* Sur petit écran, façon Google Maps : un seul bouton "calques" replié, qui
+   ouvre la liste des styles au lieu de l'afficher en permanence — audit UX
+   du 2026-09-09 (§12.24), corrige les 5 boutons texte qui débordaient sur
+   les plus petits mobiles (390px, "Hybride" collé au bord). */
+@media (max-width: 480px) {
+  .map-style-switcher__toggle {
+    display: inline-flex;
+  }
+  .map-style-switcher__options {
+    display: none;
+  }
+  .map-style-switcher.is-open .map-style-switcher__options {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    border-top: 1px solid #eee;
+  }
+  .map-style-switcher.is-open .map-style-switcher__options button {
+    text-align: left;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
 }
 
 /* --- Bouton "recentrer sur ma position" flottant. -------------------------- */
