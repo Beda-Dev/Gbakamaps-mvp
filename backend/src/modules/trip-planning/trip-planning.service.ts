@@ -7,10 +7,16 @@
 //
 // Portée assumée de cette première version (documentée, pas cachée) :
 //   - Trajets directs (0 correspondance) et à 1 correspondance MAXIMUM.
-//   - Une correspondance suppose un changement de ligne au MÊME arrêt
-//     physique (pas de marche entre deux arrêts proches de lignes
-//     différentes) — cas réel le plus fréquent pour les gares/terminus,
-//     mais pas exhaustif. Amélioration documentée pour une version future.
+//   - Une correspondance a lieu au MÊME arrêt physique OU via une COURTE
+//     MARCHE (≤ TRANSFER_WALK_RADIUS_METERS) vers un arrêt proche desservi
+//     par l'autre ligne — étendu le 2026-09-09 (§12.16/§12.23), initialement
+//     limité au seul même arrêt physique. Contrairement au rapprochement de
+//     lieux (§12.7bis, double signal proximité+nom exigé en l'absence d'ID
+//     commun), ici un SEUL signal (la distance) suffit : on ne rapproche pas
+//     deux entités pour décider si elles désignent la même chose, on
+//     cherche juste "existe-t-il un arrêt d'une AUTRE ligne, assez proche
+//     pour y marcher, qui progresse vers la destination ?" — une question
+//     géométrique, pas une question d'identité.
 //   - Le temps de marche est estimé (vitesse standard 5 km/h + facteur de
 //     détour 1,3 — valeurs usuelles de planification piétonne, PAS des
 //     mesures spécifiques à Abidjan) plutôt que d'appeler OpenRouteService
@@ -46,6 +52,15 @@ const WALK_DETOUR_FACTOR = 1.3; // trajet réel piéton vs vol d'oiseau
 // vitesse commerciale moyenne raisonnable pour un gbaka/bus en circulation
 // urbaine dense (documentée comme estimation, pas une mesure).
 const FALLBACK_RIDE_SPEED_MPS = 15000 / 3600; // 15 km/h
+// Distance MAX (mètres) entre l'arrêt de descente d'une première ligne et
+// l'arrêt d'embarquement d'une seconde pour qu'une correspondance à pied
+// entre les deux soit proposée. Choix produit (pas une mesure) : du même
+// ordre que RIDE_SNAP_MAX_M (extractRideSegment côté frontend, 350m) —
+// suffisamment court pour rester un "même carrefour/même gare" plausible
+// (pas un trajet piéton en soi), suffisamment large pour couvrir le cas
+// réel le plus fréquent après le même-arrêt-physique : deux arrêts de part
+// et d'autre d'un rond-point ou d'un même pôle d'échange.
+const TRANSFER_WALK_RADIUS_METERS = 300;
 
 const LINE_SELECT = {
   id: true,
@@ -410,7 +425,8 @@ export async function planTrip(params: PlanTripParams): Promise<{ plans: TripPla
     }
   }
 
-  // --- Trajets à 1 correspondance (même arrêt physique de transfert). ---
+  // --- Trajets à 1 correspondance (même arrêt physique OU courte marche
+  // vers un arrêt proche desservi par l'autre ligne, ≤ TRANSFER_WALK_RADIUS_METERS). ---
   if (maxTransfers >= 1) {
     const [reachableForward, reachableBackward] = await Promise.all([
       findReachableForward(boardEntries),
@@ -438,29 +454,53 @@ export async function planTrip(params: PlanTripParams): Promise<{ plans: TripPla
       }
     }
 
+    // Un point d'embarquement distinct par arrêt physique de second segment
+    // (coordonnées prises sur la première option — toutes partagent le même
+    // arrêt donc les mêmes coordonnées) : sert à calculer la distance de
+    // correspondance vers CHAQUE arrêt d'arrivée de première jambe, pas
+    // seulement vers celui qui partage exactement le même stopId.
+    const secondLegBoardingPoints = Array.from(secondLegByTransferStop.entries()).map(
+      ([stopId, options]) => ({ stopId, stop: options[0].secondLegEntry.stop, options })
+    );
+
     for (const boardPair of reachableForward) {
       const board = boardPair.origin;
       for (const transferEntry of boardPair.reachable) {
-        const options = secondLegByTransferStop.get(transferEntry.stopId) ?? [];
-        for (const { alightOrigin, secondLegEntry } of options) {
-          // Pas une vraie correspondance si les deux jambes utilisent la
-          // même ligne+sens (ce serait un trajet direct, déjà couvert).
-          if (transferEntry.lineId === secondLegEntry.lineId && transferEntry.direction === secondLegEntry.direction) {
-            continue;
-          }
+        for (const { stopId: secondStopId, stop: secondStop, options } of secondLegBoardingPoints) {
+          const transferWalkMeters =
+            transferEntry.stopId === secondStopId ? 0 : haversineMeters(transferEntry.stop, secondStop);
+          if (transferWalkMeters > TRANSFER_WALK_RADIUS_METERS) continue;
 
-          const ride1 = buildRideStep(board, transferEntry);
-          const ride2 = buildRideStep(secondLegEntry, alightOrigin);
-          const walkStart = estimateWalk(walkToBoard.get(board.stopId) ?? 0);
-          const walkEnd = estimateWalk(walkFromAlight.get(alightOrigin.stopId) ?? 0);
-          plans.push(
-            assemblePlan([
+          for (const { alightOrigin, secondLegEntry } of options) {
+            // Pas une vraie correspondance si les deux jambes utilisent la
+            // même ligne+sens (ce serait un trajet direct, déjà couvert).
+            if (transferEntry.lineId === secondLegEntry.lineId && transferEntry.direction === secondLegEntry.direction) {
+              continue;
+            }
+
+            const ride1 = buildRideStep(board, transferEntry);
+            const ride2 = buildRideStep(secondLegEntry, alightOrigin);
+            const walkStart = estimateWalk(walkToBoard.get(board.stopId) ?? 0);
+            const walkEnd = estimateWalk(walkFromAlight.get(alightOrigin.stopId) ?? 0);
+            const steps: TripStep[] = [
               { type: 'walk', ...walkStart, toLabel: board.stop.name ?? 'arrêt' },
               ride1,
-              ride2,
-              { type: 'walk', ...walkEnd, fromLabel: alightOrigin.stop.name ?? 'arrêt' },
-            ])
-          );
+            ];
+            // Rien à insérer pour une correspondance au même arrêt physique
+            // (distance 0, cf. plus haut) — seulement pour une vraie marche
+            // entre deux arrêts distincts.
+            if (transferWalkMeters > 0) {
+              const transferWalk = estimateWalk(transferWalkMeters);
+              steps.push({
+                type: 'walk',
+                ...transferWalk,
+                fromLabel: transferEntry.stop.name ?? 'arrêt',
+                toLabel: secondLegEntry.stop.name ?? 'arrêt',
+              });
+            }
+            steps.push(ride2, { type: 'walk', ...walkEnd, fromLabel: alightOrigin.stop.name ?? 'arrêt' });
+            plans.push(assemblePlan(steps));
+          }
         }
       }
     }
@@ -475,7 +515,8 @@ export async function planTrip(params: PlanTripParams): Promise<{ plans: TripPla
       "Estimations : temps de marche basé sur une vitesse standard (pas mesuré à Abidjan), " +
       'temps de trajet basé sur les horaires GTFS 2021 quand disponibles (sinon estimation par distance). ' +
       "Coût : tarif par ligne — indicatif (costVerified=false) tant qu'aucun administrateur ne l'a confirmé, " +
-      'fiable une fois vérifié (costVerified=true). Correspondances limitées à un changement au même arrêt physique. ' +
+      'fiable une fois vérifié (costVerified=true). Correspondance au même arrêt ou via une courte marche ' +
+      `(${TRANSFER_WALK_RADIUS_METERS} m maximum) vers un arrêt proche d'une autre ligne. ` +
       // Ajouté le 2026-09-08 suite à une remarque directe de l'utilisateur
       // ("tu ne prend pas en compte les temps d'attente, les embouteillage,
       // les frequance des bus et gbaka") — limite réelle et déjà vraie dans

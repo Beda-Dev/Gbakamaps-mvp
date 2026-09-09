@@ -27,30 +27,54 @@ describe('trip-planning module', () => {
   const C = { lat: 9.503, lon: -5.5 };
   const D = { lat: 9.503, lon: -5.4985 };
 
-  let stopIds: Record<'A' | 'B' | 'C' | 'D', string> = { A: '', B: '', C: '', D: '' };
-  let lineIds: Record<'L1' | 'L2', string> = { L1: '', L2: '' };
+  // E, F : arrêts d'une 3e ligne (L3) desservant une correspondance à pied
+  // depuis C — E placé au NORD-OUEST de C (~195m), dans la direction
+  // OPPOSÉE à la fois de D (à l'est) ET de B (au sud, cf. topologie L1
+  // A->B->C). Sert exclusivement le test de correspondance par courte
+  // marche ci-dessous (§12.16/§12.23). Distances vérifiées explicitement
+  // (pas au jugé), toutes hors de TRANSFER_WALK_RADIUS_METERS (300) ou du
+  // rayon de recherche destination (300) des AUTRES tests, pour ne jamais
+  // introduire de plan parasite : B-E ≈ 333m, D-E ≈ 335m, A-E ≈ 489m
+  // (seul C-E ≈ 195m est sous le seuil — la correspondance voulue).
+  const E = { lat: 9.5042, lon: -5.5013 };
+  const F = { lat: 9.5042, lon: -5.5028 };
+
+  let stopIds: Record<'A' | 'B' | 'C' | 'D' | 'E' | 'F', string> = {
+    A: '',
+    B: '',
+    C: '',
+    D: '',
+    E: '',
+    F: '',
+  };
+  let lineIds: Record<'L1' | 'L2' | 'L3', string> = { L1: '', L2: '', L3: '' };
 
   beforeAll(async () => {
     app = await buildApp();
     await app.ready();
 
-    const [stopA, stopB, stopC, stopD] = await Promise.all([
+    const [stopA, stopB, stopC, stopD, stopE, stopF] = await Promise.all([
       prisma.stop.create({ data: { name: 'Arrêt A [TEST]', lat: A.lat, lon: A.lon, stopType: 'BUS_STOP' } }),
       prisma.stop.create({ data: { name: 'Arrêt B [TEST]', lat: B.lat, lon: B.lon, stopType: 'BUS_STOP' } }),
       prisma.stop.create({ data: { name: 'Arrêt C [TEST]', lat: C.lat, lon: C.lon, stopType: 'BUS_STOP' } }),
       prisma.stop.create({ data: { name: 'Arrêt D [TEST]', lat: D.lat, lon: D.lon, stopType: 'BUS_STOP' } }),
+      prisma.stop.create({ data: { name: 'Arrêt E [TEST]', lat: E.lat, lon: E.lon, stopType: 'BUS_STOP' } }),
+      prisma.stop.create({ data: { name: 'Arrêt F [TEST]', lat: F.lat, lon: F.lon, stopType: 'BUS_STOP' } }),
     ]);
-    stopIds = { A: stopA.id, B: stopB.id, C: stopC.id, D: stopD.id };
+    stopIds = { A: stopA.id, B: stopB.id, C: stopC.id, D: stopD.id, E: stopE.id, F: stopF.id };
 
-    const [lineL1, lineL2] = await Promise.all([
+    const [lineL1, lineL2, lineL3] = await Promise.all([
       prisma.transportLine.create({
         data: { name: 'Ligne L1 [TEST]', transportType: 'BUS', externalRef: 'test-tp-l1', fare: 200, fareVerified: true },
       }),
       prisma.transportLine.create({
         data: { name: 'Ligne L2 [TEST]', transportType: 'GBAKA', externalRef: 'test-tp-l2', fare: 250, fareVerified: true },
       }),
+      prisma.transportLine.create({
+        data: { name: 'Ligne L3 [TEST]', transportType: 'WORO_WORO', externalRef: 'test-tp-l3', fare: 300, fareVerified: true },
+      }),
     ]);
-    lineIds = { L1: lineL1.id, L2: lineL2.id };
+    lineIds = { L1: lineL1.id, L2: lineL2.id, L3: lineL3.id };
 
     // L1, sens "Nord" : A(0s) -> B(120s) -> C(240s).
     await prisma.stopLine.createMany({
@@ -67,11 +91,20 @@ describe('trip-planning module', () => {
         { stopId: stopD.id, lineId: lineL2.id, direction: 'Est', sequence: 1, secondsFromRouteStart: 180 },
       ],
     });
+    // L3, sens "Sud" : E(0s) -> F(150s). E est proche de C (~11m) mais un
+    // arrêt PHYSIQUEMENT DISTINCT — sert à tester la correspondance par
+    // courte marche (L1 jusqu'à C, marche jusqu'à E, L3 jusqu'à F).
+    await prisma.stopLine.createMany({
+      data: [
+        { stopId: stopE.id, lineId: lineL3.id, direction: 'Sud', sequence: 0, secondsFromRouteStart: 0 },
+        { stopId: stopF.id, lineId: lineL3.id, direction: 'Sud', sequence: 1, secondsFromRouteStart: 150 },
+      ],
+    });
   });
 
   afterAll(async () => {
-    await prisma.stopLine.deleteMany({ where: { lineId: { in: [lineIds.L1, lineIds.L2] } } });
-    await prisma.transportLine.deleteMany({ where: { id: { in: [lineIds.L1, lineIds.L2] } } });
+    await prisma.stopLine.deleteMany({ where: { lineId: { in: [lineIds.L1, lineIds.L2, lineIds.L3] } } });
+    await prisma.transportLine.deleteMany({ where: { id: { in: [lineIds.L1, lineIds.L2, lineIds.L3] } } });
     await prisma.stop.deleteMany({ where: { id: { in: Object.values(stopIds) } } });
     await app.close();
     await prisma.$disconnect();
@@ -220,5 +253,63 @@ describe('trip-planning module', () => {
     } finally {
       await prisma.transportLine.update({ where: { id: lineIds.L2 }, data: { active: true } });
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Correspondance par courte marche entre deux arrêts proches de lignes
+  // différentes — §12.16/§12.23, extension du 2026-09-09 (auparavant limité
+  // au seul même arrêt physique).
+  // ---------------------------------------------------------------------------
+
+  it("trajet à 1 correspondance A -> F (L1 puis L3 via une courte marche C→E) trouvé", async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/trip-plan?from=${A.lat},${A.lon}&to=${F.lat},${F.lon}&maxTransfers=1&walkRadius=300`,
+    });
+    expect(res.statusCode).toBe(200);
+    const plans = res.json().data.plans;
+    const withTransfer = plans.find((p: { transfersCount: number }) => p.transfersCount === 1);
+    expect(withTransfer).toBeDefined();
+
+    const rides = withTransfer.steps.filter((s: { type: string }) => s.type === 'ride');
+    expect(rides).toHaveLength(2);
+    expect(rides[0].line.id).toBe(lineIds.L1);
+    expect(rides[0].alightStop.id).toBe(stopIds.C);
+    expect(rides[1].line.id).toBe(lineIds.L3);
+    expect(rides[1].boardStop.id).toBe(stopIds.E);
+    expect(rides[1].alightStop.id).toBe(stopIds.F);
+
+    // Une vraie marche de correspondance doit apparaître ENTRE les deux
+    // trajets en véhicule (pas seulement au début/à la fin) — c'est la
+    // preuve concrète que la correspondance n'a pas eu lieu au même arrêt
+    // physique, contrairement au trajet A->D (§12.7, L1 puis L2 via C).
+    const walks = withTransfer.steps.filter((s: { type: string }) => s.type === 'walk');
+    expect(walks).toHaveLength(3); // départ->A, C->E, F->arrivée
+    const transferWalk = walks[1];
+    expect(transferWalk.distanceMeters).toBeGreaterThan(0);
+    // C-E ≈ 195m à vol d'oiseau, x1.3 de détour ≈ 254m — sous
+    // TRANSFER_WALK_RADIUS_METERS (300) mais une vraie marche, pas un
+    // arrondi à zéro.
+    expect(transferWalk.distanceMeters).toBeGreaterThan(150);
+    expect(transferWalk.distanceMeters).toBeLessThan(280);
+  });
+
+  it("aucune correspondance A -> F proposée si maxTransfers=0", async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/trip-plan?from=${A.lat},${A.lon}&to=${F.lat},${F.lon}&maxTransfers=0`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.plans.every((p: { transfersCount: number }) => p.transfersCount === 0)).toBe(true);
+  });
+
+  it('note explique la correspondance par courte marche (plus "au même arrêt physique" uniquement)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/trip-plan?from=${A.lat},${A.lon}&to=${C.lat},${C.lon}&maxTransfers=0`,
+    });
+    const note: string = res.json().data.note;
+    expect(note).toMatch(/courte marche/i);
+    expect(note).not.toMatch(/limitées à un changement au même arrêt physique/i);
   });
 });
