@@ -387,6 +387,7 @@ async function findMatchingStop(placeName: string, lat: number, lon: number): Pr
     SELECT "id", "name"
     FROM "stops"
     WHERE "name" IS NOT NULL
+      AND "active" = true
       AND ST_DWithin("geog", ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${STOP_MATCH_RADIUS_METERS})
     LIMIT 5
   `);

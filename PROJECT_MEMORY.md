@@ -852,3 +852,18 @@ Demande explicite et détaillée de l'utilisateur : explorer réellement l'app (
 - **Amélioration identifiée, pas implémentée** : cliquer sur un favori dans `/favorites` ne permet pas de le retrouver sur la carte (pas de navigation `/` avec centrage+sélection automatique, contrairement à `handleSelectFromSearch` déjà utilisé pour la recherche). Nécessiterait un nouveau hook `useStop(id)` (le favori n'inclut pas `lines`, contrairement à l'objet `Stop` attendu par le panneau détail de `HomePage.tsx` — jamais afficher "aucune ligne" à tort faute de l'avoir chargée) : chantier à part, pas un simple ajustement.
 
 **Vérifié réellement** : `tsc --noEmit` OK, 98/98 tests frontend (aucun touché par ces changements CSS/JSX ciblés), captures avant/après pour les 2 bugs corrigés (mobile 390px), aucune erreur console sur les 7 pages auditées avec session connectée.
+
+### 12.25 Désactivation des arrêts (`Stop.active`) — cohérence avec les lignes — livré le 2026-09-09
+
+Demande explicite de l'utilisateur suite à la question "on peut modifier, desactivé un arret ou un ligne ?" : `Stop` n'avait aucun champ `active`, contrairement à `TransportLine` (§12.22) — corrigé pour la même raison (réversible, sans perte de favoris/dessertes/signalements, contrairement à la suppression dure déjà en place).
+
+**Backend** (migration `20260909164609_add_stop_active`) : `Stop.active Boolean @default(true)`. `updateStopBodySchema` accepte désormais `active` (absent volontairement de `createStopBodySchema` — un arrêt créé n'a aucune raison de naître désactivé). Filtre `active = true` ajouté partout où un arrêt est exposé publiquement :
+- `findNearby`/`searchStops` (stops.service.ts) — un arrêt désactivé disparaît de la carte et de la recherche.
+- `findBoardableStopsNear` (trip-planning.service.ts) — **même bug de fond que les lignes désactivées** (§12.22) anticipé cette fois dès l'écriture, pas découvert après coup : un arrêt désactivé ne doit jamais rester un point d'embarquement/débarquement valide.
+- `findMatchingStop` (places.service.ts) — un arrêt désactivé ne doit plus être proposé comme correspondance pour un lieu Overpass.
+
+Nouvelle route `GET /admin/stops` (requireAdmin, même principe que `GET /admin/lines`) : réutilise `findNearby` avec un paramètre `includeInactive: true` réservé à cet appel — sans lui, impossible pour un admin de retrouver un arrêt désactivé pour le réactiver.
+
+**Frontend** : `useAdminStops.ts` — nouveau hook `useAdminNearbyStops` (remplace `useNearbyStops` dans `AdminStopsPage.tsx`, qui utilisait jusqu'ici le endpoint PUBLIC — un admin ne pouvait donc déjà plus voir un arrêt une fois désactivé). `UpdateStopInput` étendu avec `active?: boolean`. `AdminStopsPage.tsx` : bouton Désactiver/Réactiver par arrêt (même logique réversible que les lignes), badge "Désactivé", opacité réduite sur la ligne concernée.
+
+**Vérifié réellement** : `tsc --noEmit` OK (backend+frontend). Backend : 44/44 tests (`stops.test.ts` 24, `admin-stops.test.ts` 20 dont 5 nouveaux — désactivation masque du public mais reste visible en admin, 401/403 sur `GET /admin/stops`, réactivation) + `trip-planning.test.ts` 13/13 (1 nouveau — arrêt de départ désactivé exclu, `walkRadius=100` pour isoler le test de l'arrêt B voisin, ne pas fausser l'assertion). Frontend : 98/98 (7 nouveaux `useAdminStops.test.ts`). **Vérifié en navigateur réel** (session admin créée directement en base) : désactivation d'un arrêt réel (Cash Center Plateau) → opacité réduite + bouton basculé "Réactiver" dans la liste admin → confirmé sans erreur console → réactivé pour ne rien laisser de pollué. Image Docker backend reconstruite et testée après coup.

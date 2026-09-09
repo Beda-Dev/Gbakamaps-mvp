@@ -312,4 +312,26 @@ describe('trip-planning module', () => {
     expect(note).toMatch(/courte marche/i);
     expect(note).not.toMatch(/limitées à un changement au même arrêt physique/i);
   });
+
+  // Cohérence Stop.active (§12.16/§12.22, ajouté le 2026-09-09) : un arrêt
+  // désactivé ne doit plus jamais être un point d'embarquement/débarquement
+  // valide — même bug de fond que les lignes désactivées (findReachable*),
+  // ici sur findBoardableStopsNear.
+  it("un arrêt de départ DÉSACTIVÉ n'est plus utilisable comme point d'embarquement", async () => {
+    await prisma.stop.update({ where: { id: stopIds.A }, data: { active: false } });
+    try {
+      // walkRadius=100 (le minimum autorisé, < les ~166m séparant A de B) :
+      // isole le test sur A précisément — B reste un candidat
+      // d'embarquement valide par ailleurs (il n'est pas désactivé), mais
+      // hors de portée ici, pour ne pas fausser l'assertion sur A.
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/trip-plan?from=${A.lat},${A.lon}&to=${C.lat},${C.lon}&maxTransfers=0&walkRadius=100`,
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.plans).toEqual([]);
+    } finally {
+      await prisma.stop.update({ where: { id: stopIds.A }, data: { active: true } });
+    }
+  });
 });

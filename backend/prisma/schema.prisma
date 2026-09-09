@@ -90,6 +90,14 @@ model Stop {
   verified    Boolean  @default(false)
   lastUpdated DateTime @default(now())
 
+  // `false` = arrêt désactivé (masqué de /stops/nearby, /stops/search et du
+  // planificateur — SANS détruire ses favoris/dessertes/signalements liés),
+  // ajouté le 2026-09-09 pour la cohérence avec TransportLine.active
+  // (§12.16/§12.22) — demande explicite de l'utilisateur. Action recommandée
+  // à la place d'une suppression dure pour un arrêt qui n'existe plus mais
+  // dont on veut garder l'historique (favoris, signalements).
+  active Boolean @default(true)
+
   // Colonne géographique PostGIS, maintenue par un trigger SQL (cf. migration
   // add_postgis_geography) à partir de lat/lon. Prisma ne modélise pas ce
   // type nativement : `Unsupported` l'expose pour que le schéma corresponde

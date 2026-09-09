@@ -162,6 +162,12 @@ export const updateStopBodySchema = z
     lat: latSchema.optional(),
     lon: lonSchema.optional(),
     stopType: stopTypeEnum.optional(),
+    // `false` = arrêt désactivé (masqué de /stops/nearby, /stops/search et
+    // du planificateur, sans détruire ses favoris/dessertes/signalements) —
+    // absent de createStopBodySchema : un arrêt qu'on crée n'a aucune
+    // raison de naître déjà désactivé, la valeur par défaut Prisma (true)
+    // suffit toujours à la création.
+    active: z.boolean().optional(),
     ...stopFlagsSchema,
   })
   // Un PATCH vide est refusé explicitement plutôt que traité comme un no-op

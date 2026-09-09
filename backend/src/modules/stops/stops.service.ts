@@ -56,11 +56,17 @@ export interface FindNearbyParams {
   type?: string;
   modes?: string[];
   lineId?: string;
+  // Réservé à l'admin (GET /admin/stops) : un arrêt désactivé ne doit
+  // JAMAIS apparaître dans une recherche publique (§12.16/§12.22, cohérence
+  // avec TransportLine.active), mais l'admin doit pouvoir le retrouver pour
+  // le réactiver.
+  includeInactive?: boolean;
 }
 
 export async function findNearby(params: FindNearbyParams) {
-  const { lat, lon, radiusMeters, limit, type, modes, lineId } = params;
+  const { lat, lon, radiusMeters, limit, type, modes, lineId, includeInactive } = params;
 
+  const activeFilter = includeInactive ? Prisma.empty : Prisma.sql`AND "active" = true`;
   const typeFilter = type ? Prisma.sql`AND "stopType" = ${type}::"StopType"` : Prisma.empty;
 
   // Sémantique OU entre modes demandés : un arrêt correspond s'il porte AU
@@ -84,6 +90,7 @@ export async function findNearby(params: FindNearbyParams) {
     SELECT "id", ST_Distance("geog", ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography) AS distance
     FROM "stops"
     WHERE ST_DWithin("geog", ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography, ${radiusMeters})
+    ${activeFilter}
     ${typeFilter}
     ${modesFilter}
     ${lineFilter}
@@ -138,6 +145,7 @@ export async function searchStops(params: SearchStopsParams) {
 
   const stops = await prisma.stop.findMany({
     where: {
+      active: true,
       OR: [
         { name: { contains: query, mode: 'insensitive' } },
         { stopLines: { some: { line: { name: { contains: query, mode: 'insensitive' } } } } },

@@ -142,6 +142,27 @@ export async function stopsRoutes(app: FastifyInstance) {
   // Administration (rôle ADMIN requis)
   // ---------------------------------------------------------------------------
 
+  // Liste ADMIN distincte de GET /stops/nearby (public) : inclut les arrêts
+  // désactivés, sinon impossible de les retrouver pour les réactiver — même
+  // principe que GET /admin/lines (§12.22).
+  app.get('/admin/stops', { preHandler: requireAdmin }, async (request, reply) => {
+    const query = nearbyStopsQuerySchema.parse(request.query);
+    const stops = await findNearby({
+      lat: query.lat,
+      lon: query.lon,
+      radiusMeters: query.radius,
+      limit: query.limit,
+      type: query.type,
+      modes: query.modes,
+      lineId: query.lineId,
+      includeInactive: true,
+    });
+    return reply.send({
+      success: true,
+      data: { stops, count: stops.length, radius: query.radius },
+    });
+  });
+
   app.post('/admin/stops', { preHandler: requireAdmin }, async (request, reply) => {
     const body = createStopBodySchema.parse(request.body);
     const stop = await createStop(body);

@@ -7,6 +7,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it } from 'vitest';
 import {
+  useAdminNearbyStops,
   useCreateStop,
   useDeleteStop,
   useStopDeletionImpact,
@@ -22,6 +23,22 @@ function createWrapper() {
     return createElement(QueryClientProvider, { client: queryClient }, children);
   };
 }
+
+describe('useAdminNearbyStops', () => {
+  it('GET /admin/stops (inclut les arrêts désactivés, contrairement à /stops/nearby)', async () => {
+    setFetchHandler(() => ({
+      status: 200,
+      body: { success: true, data: { stops: [], count: 0, radius: 1000 } },
+    }));
+    const { result } = renderHook(() => useAdminNearbyStops(5.3, -4.0, 1000), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const call = findFetchCall('/admin/stops?lat=5.3&lon=-4&radius=1000&limit=500');
+    expect(call).toBeDefined();
+  });
+});
 
 describe('useCreateStop', () => {
   it('POST /admin/stops avec le body fourni', async () => {
@@ -47,6 +64,22 @@ describe('useCreateStop', () => {
 });
 
 describe('useUpdateStop', () => {
+  it("PATCH /admin/stops/:id — utilisé aussi pour désactiver (active: false seul)", async () => {
+    setFetchHandler(() => ({
+      status: 200,
+      body: { success: true, data: { id: 's1', active: false } },
+    }));
+    const { result } = renderHook(() => useUpdateStop(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: 's1', input: { active: false } });
+    });
+
+    const call = findFetchCall('/admin/stops/s1');
+    expect(call).toBeDefined();
+    expect(JSON.parse(call!.init!.body as string)).toEqual({ active: false });
+  });
+
   it('PATCH /admin/stops/:id — utilisé aussi pour un déplacement (lat/lon seuls)', async () => {
     setFetchHandler(() => ({
       status: 200,

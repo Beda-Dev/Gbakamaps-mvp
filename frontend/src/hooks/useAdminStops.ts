@@ -5,9 +5,9 @@
 // invalidation des listes publiques après mutation pour que la carte
 // principale reflète immédiatement le changement).
 // =============================================================================
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api/client';
-import type { Stop } from '@/lib/api/types';
+import type { NearbyStopsData, Stop } from '@/lib/api/types';
 
 export interface CreateStopInput {
   name: string | null;
@@ -24,7 +24,21 @@ export interface CreateStopInput {
   verified?: boolean;
 }
 
-export type UpdateStopInput = Partial<CreateStopInput>;
+// `active` volontairement absent de CreateStopInput (comme côté backend,
+// stops.schemas.ts) : un arrêt créé n'a aucune raison de naître désactivé.
+export type UpdateStopInput = Partial<CreateStopInput> & { active?: boolean };
+
+// Liste ADMIN distincte de useNearbyStops (public) : inclut les arrêts
+// désactivés, sinon impossible de les retrouver pour les réactiver — même
+// principe que useAdminLines.ts.
+export function useAdminNearbyStops(lat: number, lon: number, radius: number) {
+  return useQuery({
+    queryKey: ['admin-stops', lat, lon, radius],
+    queryFn: () =>
+      api.get<NearbyStopsData>(`/admin/stops?lat=${lat}&lon=${lon}&radius=${radius}&limit=500`),
+    staleTime: 30_000,
+  });
+}
 
 // Conséquences réelles d'une suppression — voir stops.service.ts côté
 // backend (StopDeletionImpact) pour le détail Cascade vs SetNull.
@@ -41,6 +55,7 @@ export interface StopDeletionImpact {
 // arrêt doit le voir bouger immédiatement, pas seulement après un F5.
 function invalidateStopCaches(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: ['stops'] });
+  void queryClient.invalidateQueries({ queryKey: ['admin-stops'] });
 }
 
 export function useCreateStop() {

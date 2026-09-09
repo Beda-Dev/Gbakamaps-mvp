@@ -2650,6 +2650,12 @@ textarea.home__report-input {
   padding: 0.4rem;
   border-radius: 6px;
   border: 1px solid #eee;
+  flex-wrap: wrap;
+}
+
+.admin-stops__item.is-inactive {
+  opacity: 0.55;
+  background: #fafafa;
 }
 
 .admin-stops__item-info {
@@ -2667,6 +2673,17 @@ textarea.home__report-input {
   white-space: nowrap;
 }
 
+.admin-stops__badge {
+  margin-left: 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #b00020;
+  border: 1px solid #b00020;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  vertical-align: middle;
+}
+
 .admin-stops__item-type {
   font-size: 0.72rem;
   color: #6b6b6b;
@@ -2682,9 +2699,29 @@ textarea.home__report-input {
   white-space: nowrap;
 }
 
+.admin-stops__toggle-btn {
+  border: 1px solid #ddd !important;
+  border-radius: 6px;
+}
+
 .admin-stops__delete-btn {
   color: #b00020 !important;
   display: inline-flex;
+}
+
+/* Sur écran étroit, le nom d'un arrêt tronqué par ellipsis n'a plus assez
+   de place à côté de 3 actions (Modifier/Désactiver/×) — même bug que
+   AdminLinesPage (§12.24), corrigé de la même façon : actions sur leur
+   propre rangée sous 480px. */
+@media (max-width: 480px) {
+  .admin-stops__item-info {
+    flex-basis: calc(100% - 1.8rem);
+  }
+  .admin-stops__item-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
 }
 
 .admin-stops__map {

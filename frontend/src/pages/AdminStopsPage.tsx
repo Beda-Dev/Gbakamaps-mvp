@@ -13,8 +13,8 @@
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { useNearbyStops } from '@/hooks/useNearbyStops';
 import {
+  useAdminNearbyStops,
   useCreateStop,
   useDeleteStop,
   useStopDeletionImpact,
@@ -86,7 +86,7 @@ export function AdminStopsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Stop | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const stops = useNearbyStops(center.lat, center.lon, radius);
+  const stops = useAdminNearbyStops(center.lat, center.lon, radius);
   const createStop = useCreateStop();
   const updateStop = useUpdateStop();
   const deleteStop = useDeleteStop();
@@ -201,6 +201,18 @@ export function AdminStopsPage() {
     deletionImpact.mutate(stop.id);
   }
 
+  // Désactivation/réactivation — action RÉVERSIBLE recommandée en priorité
+  // sur la suppression dure (cohérence avec TransportLine.active, §12.22) :
+  // un arrêt réactivé par erreur ne perd aucune donnée.
+  async function toggleActive(stop: Stop) {
+    setActionError(null);
+    try {
+      await updateStop.mutateAsync({ id: stop.id, input: { active: !(stop.active ?? true) } });
+    } catch {
+      setActionError(stop.active === false ? 'Réactivation impossible.' : 'Désactivation impossible.');
+    }
+  }
+
   return (
     <main className="admin-stops">
       <div className="admin-stops__sidebar">
@@ -259,7 +271,10 @@ export function AdminStopsPage() {
 
         <ul className="admin-stops__list">
           {loadedStops.map((stop) => (
-            <li key={stop.id} className="admin-stops__item">
+            <li
+              key={stop.id}
+              className={`admin-stops__item${stop.active === false ? ' is-inactive' : ''}`}
+            >
               <input
                 type="checkbox"
                 checked={selectedIds.has(stop.id)}
@@ -267,11 +282,22 @@ export function AdminStopsPage() {
                 aria-label={`Sélectionner ${stop.name ?? 'arrêt sans nom'}`}
               />
               <div className="admin-stops__item-info">
-                <span className="admin-stops__item-name">{stop.name ?? 'Arrêt sans nom'}</span>
+                <span className="admin-stops__item-name">
+                  {stop.name ?? 'Arrêt sans nom'}
+                  {stop.active === false && <span className="admin-stops__badge">Désactivé</span>}
+                </span>
                 <span className="admin-stops__item-type">{STOP_TYPE_LABELS[stop.stopType] ?? stop.stopType}</span>
               </div>
               <button type="button" onClick={() => startEditing(stop)} aria-label="Modifier">
                 Modifier
+              </button>
+              <button
+                type="button"
+                className="admin-stops__toggle-btn"
+                onClick={() => void toggleActive(stop)}
+                disabled={updateStop.isPending}
+              >
+                {stop.active === false ? 'Réactiver' : 'Désactiver'}
               </button>
               <button
                 type="button"

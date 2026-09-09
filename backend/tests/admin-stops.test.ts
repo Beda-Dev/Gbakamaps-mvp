@@ -401,4 +401,99 @@ describe('CRUD admin des arrêts', () => {
     const search = await app.inject({ method: 'GET', url: '/api/stops/search?q=Arret public' });
     expect(search.statusCode).toBe(200);
   });
+
+  // ---------------------------------------------------------------------------
+  // Désactivation (Stop.active) — cohérence avec TransportLine.active
+  // (§12.16/§12.22), ajoutée le 2026-09-09 sur demande explicite de
+  // l'utilisateur.
+  // ---------------------------------------------------------------------------
+
+  it("PATCH active:false masque l'arrêt de /stops/nearby ET /stops/search publics, mais pas de GET /admin/stops", async () => {
+    const stop = await prisma.stop.create({
+      data: { name: 'Arret Desactivable [TEST]', lat: TEST_LAT, lon: TEST_LON },
+    });
+    createdStopIds.push(stop.id);
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/stops/${stop.id}`,
+      cookies: asAdmin,
+      payload: { active: false },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect(patchRes.json().data.active).toBe(false);
+
+    const nearby = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${TEST_LAT}&lon=${TEST_LON}&radius=500`,
+    });
+    expect(nearby.json().data.stops.some((s: { id: string }) => s.id === stop.id)).toBe(false);
+
+    const search = await app.inject({
+      method: 'GET',
+      url: '/api/stops/search?q=Arret Desactivable',
+    });
+    expect(search.json().data.stops.some((s: { id: string }) => s.id === stop.id)).toBe(false);
+
+    // GET /stops/:id direct reste inchangé (même comportement que les
+    // lignes, cf. getLineById — pas de filtre actif là, volontairement).
+    const detail = await app.inject({ method: 'GET', url: `/api/stops/${stop.id}` });
+    expect(detail.statusCode).toBe(200);
+
+    // ...mais la liste ADMIN le retrouve toujours, pour pouvoir le réactiver.
+    const adminList = await app.inject({
+      method: 'GET',
+      url: `/api/admin/stops?lat=${TEST_LAT}&lon=${TEST_LON}&radius=500`,
+      cookies: asAdmin,
+    });
+    expect(adminList.statusCode).toBe(200);
+    const found = adminList.json().data.stops.find((s: { id: string }) => s.id === stop.id);
+    expect(found).toBeDefined();
+    expect(found.active).toBe(false);
+  });
+
+  it('GET /admin/stops sans authentification retourne 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/admin/stops?lat=${TEST_LAT}&lon=${TEST_LON}&radius=500`,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('GET /admin/stops par un utilisateur non-admin retourne 403', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/admin/stops?lat=${TEST_LAT}&lon=${TEST_LON}&radius=500`,
+      cookies: { gbakamap_session: userSessionId },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("une réactivation (active:true) rend l'arrêt à nouveau visible publiquement", async () => {
+    const stop = await prisma.stop.create({
+      data: { name: 'Arret Reactivable [TEST]', lat: TEST_LAT, lon: TEST_LON, active: false },
+    });
+    createdStopIds.push(stop.id);
+
+    const before = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${TEST_LAT}&lon=${TEST_LON}&radius=500`,
+    });
+    expect(before.json().data.stops.some((s: { id: string }) => s.id === stop.id)).toBe(false);
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/admin/stops/${stop.id}`,
+      cookies: asAdmin,
+      payload: { active: true },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect(patchRes.json().data.active).toBe(true);
+
+    const after = await app.inject({
+      method: 'GET',
+      url: `/api/stops/nearby?lat=${TEST_LAT}&lon=${TEST_LON}&radius=500`,
+    });
+    expect(after.json().data.stops.some((s: { id: string }) => s.id === stop.id)).toBe(true);
+  });
 });

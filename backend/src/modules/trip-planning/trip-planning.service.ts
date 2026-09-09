@@ -118,6 +118,7 @@ async function findBoardableStopsNear(
     FROM "stops" s
     INNER JOIN "stop_lines" sl ON sl."stopId" = s."id"
     WHERE ST_DWithin(s."geog", ST_SetSRID(ST_MakePoint(${point.lon}, ${point.lat}), 4326)::geography, ${radiusMeters})
+      AND s."active" = true
     ORDER BY distance ASC
     LIMIT ${limit}
   `);

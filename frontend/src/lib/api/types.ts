@@ -33,6 +33,9 @@ export interface Stop {
   mototaxi: boolean;
   lines: Line[];
   distanceMeters?: number;
+  // Absent des réponses publiques (toujours actif) — seule GET /admin/stops
+  // renvoie explicitement les arrêts désactivés, cf. useAdminStops.ts §12.22.
+  active?: boolean;
 }
 
 export interface NearbyStopsData {
