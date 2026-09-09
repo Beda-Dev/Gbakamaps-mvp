@@ -1,0 +1,9 @@
+# Fins de ligne forcées en LF pour tout script exécuté DANS un conteneur
+# Linux — sur Windows (ce dépôt est développé sous Windows, `core.autocrlf`
+# souvent activé par défaut), un script shell checké out en CRLF casse au
+# premier `docker build` avec une erreur "bad interpreter" (le shebang
+# `#!/bin/sh\r` n'est pas reconnu). Trouvé en auditant le projet le
+# 2026-09-09 en ajoutant backend/docker-entrypoint.sh : le fichier local
+# était en LF par chance (créé directement en LF), mais rien n'empêchait un
+# autre poste Windows de le récupérer en CRLF au prochain clone/checkout.
+*.sh text eol=lf

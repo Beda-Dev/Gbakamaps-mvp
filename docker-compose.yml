@@ -7,7 +7,17 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # "127.0.0.1:PORT:5432" (pas juste "PORT:5432") : sans le préfixe
+      # d'adresse, Docker publie sur TOUTES les interfaces (0.0.0.0) — sur
+      # un vrai serveur (pas cette machine de dev), Postgres serait alors
+      # directement joignable depuis Internet, les identifiants de la base
+      # devenant la seule protection. Le backend, lui, atteint toujours `db`
+      # par le réseau Docker interne (DATABASE_URL="...@db:5432/..."), jamais
+      # par ce port publié — ce mapping ne sert qu'à un accès local
+      # (psql/DBeaver) depuis la machine hôte elle-même. Trouvé en auditant
+      # le projet le 2026-09-09, jamais remarqué avant (fonctionnait "par
+      # hasard" en dev, aucun accès distant testé).
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -46,6 +56,17 @@ services:
       MAPILLARY_ACCESS_TOKEN: ${MAPILLARY_ACCESS_TOKEN}
     ports:
       - "${PORT:-4000}:4000"
+    # Reprend le HEALTHCHECK déjà défini dans le Dockerfile (Compose n'en a
+    # pas besoin pour fonctionner, mais l'expliciter ici documente le
+    # comportement sans avoir à ouvrir le Dockerfile, et permettra un futur
+    # `depends_on: backend: condition: service_healthy` si un service en
+    # dépend un jour).
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4000/api/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     volumes:
       # Photos communautaires (§9/§12.8) : un volume nommé persistant, pas
       # un simple dossier dans l'image — sinon perdu à chaque rebuild

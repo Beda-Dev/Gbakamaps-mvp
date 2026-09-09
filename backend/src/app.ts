@@ -5,6 +5,7 @@
 // =============================================================================
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
@@ -41,6 +42,14 @@ export async function buildApp() {
   app.decorateRequest('currentUser', undefined);
 
   app.setErrorHandler(globalErrorHandler);
+
+  // En-têtes de sécurité (X-Content-Type-Options, X-Frame-Options,
+  // Referrer-Policy, HSTS, etc.) — absents avant cet audit du 2026-09-09 :
+  // aucun plugin de ce type n'était enregistré. Cette API ne sert que du
+  // JSON + des photos statiques uploadées (jamais de HTML/JS applicatif),
+  // donc la CSP par défaut de helmet (restrictive) ne casse rien ici —
+  // vérifié après coup par la suite de tests complète.
+  await app.register(helmet);
 
   await app.register(cors, {
     origin: (origin, callback) => {
